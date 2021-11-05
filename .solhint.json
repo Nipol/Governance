@@ -1,0 +1,12 @@
+{
+  "rules": {
+    "func-order": "off",
+    "no-inline-assembly": "warn",
+    "mark-callable-contracts": "off",
+    "payable-fallback": "off",
+    "compiler-version": ["off"],
+    "const-name-snakecase": "off",
+    "not-rely-on-time": "off",
+    "var-name-mixedcase": "off"
+  }
+}
