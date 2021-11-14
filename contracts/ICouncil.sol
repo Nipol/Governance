@@ -7,24 +7,47 @@ pragma solidity ^0.8.0;
  * @title ICouncil
  */
 interface ICouncil {
-    enum States { UNKNOWN, YAY, NAY, ABSENT }
-
-    struct inside {
-        // 최소 프로포절 제안 가능 수량
-        // 최소 투표 참여 수량
-        // 최소 투표 기간
-        // 투표 변경 period
+    /// @notice 투표 기간에 대한 정보만 기록
+    enum ProposalState {
+        UNKNOWN,
+        PENDING,
+        ACTIVE,
+        QUEUED
+    }
+    enum VoteState {
+        UNKNOWN,
+        YAY,
+        NAY,
+        ABSENT
     }
 
+    struct Slot {
+        // 프로포절 제안 정족 수량 - 총 발행량의 10%
+        uint96 proposalQuorum;
+        // 투표 정족 수 - 총 발행량의 10%
+        uint96 voteQuorum;
+        // 투표 시작 지연 기간 - 1일
+        uint32 voteDelay;
+        // 투표 변경 가능 period - 2일
+        uint32 voteChangePeriod;
+        // 투표권 모듈 컨트랙트 정보
+        address voteModule;
+    }
+
+    /// @notice 프로포절에 대한 투표 정보 기록
+    struct Proposal {
+        uint32 startTime;
+        uint32 endTime;
+        uint96 yea;
+        uint96 nay;
+        uint96 abstain;
+        ProposalState state;
+        mapping(address => Vote) votes;
+    }
+
+    /// @notice 개개인의 투표 정보 기록
     struct Vote {
-        uint96 forVote;
-        uint96 againstVote;
+        uint32 ts;
+        VoteState state;
     }
-
-    struct Receipt {
-        uint32 timestamp;
-        States stats;
-    }
-
-
 }

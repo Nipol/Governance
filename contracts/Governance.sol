@@ -13,7 +13,7 @@ import "./IGovernance.sol";
  * @notice DAO의 지갑이자, 거버넌스 역할을 수행할 최종 인스턴스.
  * - 거버넌스는 카운슬의 실행 가능성에만 보팅에 대해 검증만 수행하기 때문에 거버넌스는 카운슬 구성원을 알수도 없고, 의존 및 관심사를 분리함
  */
-contract Governance is Initializer, Scheduler, IGovernance {
+contract Governance is IGovernance, Scheduler, Initializer {
     string public constant version = "1";
 
     /**
@@ -27,7 +27,7 @@ contract Governance is Initializer, Scheduler, IGovernance {
     address public council;
 
     /**
-     * @notice Proposal 고유 아이디 생성을 위한 고유 값
+     * @notice 고유한 Proposal 아이디 생성을 위한 내부 순서
      */
     uint24 public nonce;
 
@@ -54,42 +54,44 @@ contract Governance is Initializer, Scheduler, IGovernance {
      * @notice
      * @dev 보팅 기간, 실행 대기 기간,
      * @param govName 해당 거버넌스의 이름, 사람이 읽을 수 있는 형태
-     * @param councilAddr 거버넌스를 통제할 Council 컨트랙트 주소, EOA일 수도 있으나 0x0이 될 수는 없다.
+     * @param initialCouncil 거버넌스를 통제할 Council 컨트랙트 주소, EOA일 수도 있으나 0x0이 될 수는 없다.
+     * @param executeDelay 거버넌스로 사용될 기본 딜레이, Scheduler의 기준을 따르며, 1일 이상이여야 한다.
      */
-    function initialize(string memory govName, address councilAddr) external initializer {
-        require(councilAddr != address(0));
+    function initialize(
+        string memory govName,
+        address initialCouncil,
+        uint32 executeDelay
+    ) external initializer {
+        require(initialCouncil != address(0));
         name = govName;
-        council = councilAddr;
+        council = initialCouncil;
+        setDelay(executeDelay);
     }
 
     /**
-     * @notice 제안 등록
+     * @notice 제안을 등록한다.
      */
-    function propose(
-        address proposer,
-        address[] calldata targets,
-        uint256[] calldata values,
-        bytes[] calldata calldatas
-    ) external onlyCouncil {
-        // 제안자의 보팅이 한 블럭 이전 보팅 수량으로 쿼럼을 만족하는지 체크
-        bytes32 uniqueId = keccak256(abi.encode(address(this), version, msg.sender, ++nonce));
-        proposals[uniqueId] = Proposal({
-            id: nonce,
-            proposer: proposer,
-            startBlock: uint32(block.timestamp),
-            endBlock: uint32(block.timestamp), // 보팅 기간 확정
-            targets: targets,
-            values: values,
-            calldatas: calldatas,
-            executed: false,
-            canceled: false
-        });
-
+    function propose(ProposalParams memory params) external onlyCouncil returns (bytes32 uniqueId, uint24 id) {
+        id = ++nonce;
+        uniqueId = keccak256(abi.encode(address(this), version, msg.sender, id));
+        Proposal storage p = proposals[uniqueId];
+        (p.id, p.proposer, p.startTime, p.endTime, p.spells, p.values, p.calldatas, p.executed, p.canceled, p.state) = (
+            id,
+            params.proposer,
+            params.startTime,
+            params.endTime,
+            params.spells,
+            params.values,
+            params.calldatas,
+            false,
+            false,
+            ProposalState.AWAIT
+        );
         emit Proposed();
     }
 
     /**
-     * @notice 실행하기로 결정한 제안을 대기열에 등록
+     * @notice 실행하기로 결정한 제안을 대기열에 등록하며, Council에서 지정된 투표 기간 이후에 실행되는 함수
      */
     function insert(bytes32 uniqueId) external onlyCouncil {
         queue(uniqueId);
@@ -100,16 +102,20 @@ contract Governance is Initializer, Scheduler, IGovernance {
      */
     function execute(bytes32 uniqueId) external onlyCouncil {
         resolve(uniqueId);
-        if (stateOf[uid] == STATE.RESOLVED) {
+        if (stateOf[uniqueId] == STATE.RESOLVED) {
             Proposal memory p = proposals[uniqueId];
-            for (uint256 i = 0; i > p.targets.length; i++) {
-                (bool success, ) = p.targets[i].call{value: p.values[i]}(p.calldatas[i]);
+            for (uint256 i = 0; i > p.spells.length; i++) {
+                (bool success, ) = p.spells[i].call{value: p.values[i]}(p.calldatas[i]);
                 assert(success);
             }
             proposals[uniqueId].executed = true;
-        } else if (stateOf[uid] == STATE.STALED) {
+        } else if (stateOf[uniqueId] == STATE.STALED) {
             proposals[uniqueId].canceled = true;
         }
+    }
+
+    function DOMAIN_SEPARATOR() external view returns (bytes32 ds) {
+        ds = EIP712.hashDomainSeperator(name, version, address(this));
     }
 
     function changeCouncil(address councilAddr) internal onlyGov {
@@ -120,9 +126,5 @@ contract Governance is Initializer, Scheduler, IGovernance {
 
     function emergencyCouncil(address councilorAddr) internal onlyGov {
         council = councilorAddr;
-    }
-
-    function DOMAIN_SEPARATOR() external view returns (bytes32 ds) {
-        ds = EIP712.hashDomainSeperator(name, version, address(this));
     }
 }
