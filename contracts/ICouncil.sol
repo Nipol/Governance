@@ -41,6 +41,8 @@ interface ICouncil {
         uint96 yea;
         uint96 nay;
         uint96 abstain;
+        uint96 totalVotes;
+        uint24 epoch; // 블록이 포함되어 있는 1주 단위의 epoch 또는 블록 번호... 타임 스탬프 흠
         ProposalState state;
         mapping(address => Vote) votes;
     }
@@ -50,4 +52,6 @@ interface ICouncil {
         uint32 ts;
         VoteState state;
     }
+
+    event Proposed(bytes32 uid);
 }

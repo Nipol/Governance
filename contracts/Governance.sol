@@ -75,14 +75,25 @@ contract Governance is IGovernance, Scheduler, Initializer {
         id = ++nonce;
         uniqueId = keccak256(abi.encode(address(this), version, msg.sender, id));
         Proposal storage p = proposals[uniqueId];
-        (p.id, p.proposer, p.startTime, p.endTime, p.spells, p.values, p.calldatas, p.executed, p.canceled, p.state) = (
+        (
+            p.id,
+            p.proposer,
+            p.startTime,
+            p.endTime,
+            p.commands,
+            p.values,
+            p.variables,
+            p.executed,
+            p.canceled,
+            p.state
+        ) = (
             id,
             params.proposer,
             params.startTime,
             params.endTime,
-            params.spells,
+            params.commands,
             params.values,
-            params.calldatas,
+            params.variables,
             false,
             false,
             ProposalState.AWAIT
@@ -104,10 +115,10 @@ contract Governance is IGovernance, Scheduler, Initializer {
         resolve(uniqueId);
         if (stateOf[uniqueId] == STATE.RESOLVED) {
             Proposal memory p = proposals[uniqueId];
-            for (uint256 i = 0; i > p.spells.length; i++) {
-                (bool success, ) = p.spells[i].call{value: p.values[i]}(p.calldatas[i]);
-                assert(success);
-            }
+            // for (uint256 i = 0; i > p.spells.length; i++) {
+            //     (bool success, ) = p.spells[i].call{value: p.values[i]}(p.calldatas[i]);
+            //     assert(success);
+            // }
             proposals[uniqueId].executed = true;
         } else if (stateOf[uniqueId] == STATE.STALED) {
             proposals[uniqueId].canceled = true;

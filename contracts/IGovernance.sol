@@ -18,9 +18,9 @@ interface IGovernance {
         address proposer;
         uint32 startTime;
         uint32 endTime;
-        bytes32[] spells;
+        bytes32[] commands;
         uint128[] values;
-        bytes[] calldatas;
+        bytes[] variables;
         bool executed;
         bool canceled;
         ProposalState state;
@@ -38,9 +38,9 @@ interface IGovernance {
         address proposer;
         uint32 startTime;
         uint32 endTime;
-        bytes32[] spells;
+        bytes32[] commands;
         uint128[] values;
-        bytes[] calldatas;
+        bytes[] variables;
     }
 
     function propose(ProposalParams memory params) external returns (bytes32 uniqueId, uint24 id);
