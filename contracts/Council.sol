@@ -4,7 +4,7 @@
 pragma solidity ^0.8.0;
 
 import "@beandao/contracts/library/Initializer.sol";
-import "@beandao/contracts/library/Scheduler.sol";
+// import "@beandao/contracts/library/Scheduler.sol";
 
 import "./VoteModule/IModule.sol";
 import "./ICouncil.sol";
@@ -14,7 +14,7 @@ import "./IGovernance.sol";
  * @title Council
  * @notice 투표권과 투표 정보를 컨트롤하는 컨트랙트. 거버넌스 정보는 이곳에 저장하지 않으며,
  */
-contract Council is ICouncil, Scheduler, Initializer {
+contract Council is ICouncil, Initializer {
     string public constant version = "1";
     Slot public slot;
     /**
@@ -22,9 +22,16 @@ contract Council is ICouncil, Scheduler, Initializer {
      */
     mapping(bytes32 => Proposal) public proposals;
 
-    function initialize(address voteModuleAddr, uint32 voteDelay) external initializer {
+    function initialize(
+        address voteModuleAddr,
+        uint32 voteStartDelay,
+        uint32 votePeriod,
+        uint32 voteChangableDelay
+    ) external initializer {
         slot.voteModule = voteModuleAddr;
-        setDelay(voteDelay);
+        slot.voteStartDelay = voteStartDelay;
+        slot.votePeriod = votePeriod;
+        slot.voteChangableDelay = voteChangableDelay;
     }
 
     fallback() external payable {
@@ -57,8 +64,8 @@ contract Council is ICouncil, Scheduler, Initializer {
         require(IModule(address(this)).getPriorPower(msg.sender, block.number - 1) >= slot.proposalQuorum);
 
         // 투표 시작 지연 추가
-        uint32 start = uint32(block.timestamp) + slot.voteDelay;
-        uint32 end = start + delay;
+        uint32 start = uint32(block.timestamp) + slot.voteStartDelay;
+        uint32 end = start + slot.votePeriod;
         // 거버넌스 컨트랙트에 등록할 proposal 정보
         IGovernance.ProposalParams memory params = IGovernance.ProposalParams({
             proposer: msg.sender,
@@ -70,31 +77,66 @@ contract Council is ICouncil, Scheduler, Initializer {
         });
 
         // 거버넌스 컨트랙트에 proposal 등록
-        (bytes32 uid, ) = IGovernance(governance).propose(params);
+        (bytes32 proposalId, ) = IGovernance(governance).propose(params);
         // 반횐된 uid에 대해 council 버전의 proposal 저장.
-        Proposal storage p = proposals[uid];
+        (ProposalState state, Proposal storage p) = getProposalState(proposalId);
         // 한번도 사용되지 않은 유니크 아이디인지 확인
-        assert(p.state == ProposalState.UNKNOWN); // check never used
-        (p.startTime, p.endTime, p.yea, p.nay, p.abstain, p.totalVotes, p.state) = (
+        assert(state == ProposalState.UNKNOWN); // check never used
+        (p.startTime, p.endTime, p.yea, p.nay, p.abstain, p.totalVotes, p.blockNumber, p.timestamp, p.epoch) = (
             start,
             end,
-            0,
-            0,
-            0,
-            0,
-            // Epoch
-            slot.voteDelay == 0 ? ProposalState.ACTIVE : ProposalState.PENDING
+            0, //yea
+            0, //nay
+            0, //abstain
+            0, // totalVotes
+            uint32(block.number), // block number for Verification.
+            uint32(block.timestamp), // block timestamp for Verification.
+            0 // Epoch logic...
         );
-
-        // Proposal 대기열 등록
-        queue(uid, start);
-        emit Proposed(uid);
+        emit Proposed(proposalId);
     }
 
     function vote(bytes32 proposalId, uint8 support) external {
-        // 투표 가능 수량 가져오기
-        // 투표 수량 입력하기
+        (ProposalState state, Proposal storage p) = getProposalState(proposalId);
+        // 존재하는 Proposal인지 & 활성 상태인지 확인
+        assert(state == ProposalState.ACTIVE);
+        // 기록된 블록의 - 1 기준으로 투표권 확인
+        uint256 power = IModule(address(this)).getPriorPower(msg.sender, p.blockNumber - 1);
+        Vote storage v = p.votes[msg.sender];
+        // timestamp 0인지 체크 -> 처음 투표 과정(support 에 따라서 파워 기록, votes에 기록)
+        if (v.ts == 0) {
+            v.ts = uint32(block.timestamp);
+            v.state = support == 0x00 ? VoteState.YEA : support == 0x01 ? VoteState.NAY : support == 0x02
+                ? VoteState.ABSENT
+                : VoteState.UNKNOWN;
+            p.totalVotes += uint96(power);
+            p.yea += support == 0x00 ? uint96(power) : 0;
+            p.nay += support == 0x01 ? uint96(power) : 0;
+            p.abstain += support == 0x02 ? uint96(power) : 0;
+        } else {
+            require((v.ts + slot.voteChangableDelay) < uint32(block.timestamp), "changing period");
+            v.ts = uint32(block.timestamp);
+            p.yea -= support == 0x00 ? uint96(power) : 0;
+            p.nay -= support == 0x01 ? uint96(power) : 0;
+            p.abstain -= support == 0x02 ? uint96(power) : 0;
+            v.state = support == 0x00 ? VoteState.YEA : support == 0x01 ? VoteState.NAY : support == 0x02
+                ? VoteState.ABSENT
+                : VoteState.UNKNOWN;
+            p.yea += support == 0x00 ? uint96(power) : 0;
+            p.nay += support == 0x01 ? uint96(power) : 0;
+            p.abstain += support == 0x02 ? uint96(power) : 0;
+        }
+        // 만약 기록되어 있다면, 투표 딜레이 지났는지 확인하고, 바뀐 투표 확인하고, 이전 power 줄이고, 새로운 Power 상승. 타임스탬프 기록
     }
 
-    // function queue(bytes32 proposqlId) external {}
+    function getProposalState(bytes32 proposalId) internal view returns (ProposalState state, Proposal storage p) {
+        p = proposals[proposalId];
+        if (p.startTime > uint32(block.timestamp)) {
+            state = ProposalState.PENDING;
+        } else if (p.startTime <= uint32(block.timestamp)) {
+            state = ProposalState.ACTIVE;
+        } else if (p.startTime == 0) {
+            state = ProposalState.UNKNOWN;
+        }
+    }
 }
