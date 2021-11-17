@@ -12,6 +12,7 @@ import "./IGovernance.sol";
  * @title Governance
  * @notice DAO의 지갑이자, 거버넌스 역할을 수행할 최종 인스턴스.
  * - 거버넌스는 카운슬의 실행 가능성에만 보팅에 대해 검증만 수행하기 때문에 거버넌스는 카운슬 구성원을 알수도 없고, 의존 및 관심사를 분리함
+ * TODO: standby require
  */
 contract Governance is IGovernance, Scheduler, Initializer {
     string public constant version = "1";
@@ -29,7 +30,7 @@ contract Governance is IGovernance, Scheduler, Initializer {
     /**
      * @notice 고유한 Proposal 아이디 생성을 위한 내부 순서
      */
-    uint24 public nonce;
+    uint128 public nonce;
 
     /**
      * @notice keccak256(contract address ++ contract versrion ++ proposer address ++ nonce) to proposal
@@ -71,32 +72,18 @@ contract Governance is IGovernance, Scheduler, Initializer {
     /**
      * @notice 제안을 등록한다.
      */
-    function propose(ProposalParams memory params) external onlyCouncil returns (bytes32 uniqueId, uint24 id) {
+    function propose(ProposalParams memory params) external onlyCouncil returns (bytes32 uniqueId, uint128 id) {
         id = ++nonce;
         uniqueId = keccak256(abi.encode(address(this), version, msg.sender, id));
         Proposal storage p = proposals[uniqueId];
-        (
-            p.id,
-            p.proposer,
-            p.startTime,
-            p.endTime,
-            p.commands,
-            p.values,
-            p.variables,
-            p.executed,
-            p.canceled,
-            p.state
-        ) = (
+        (p.id, p.proposer, p.commands, p.values, p.variables) = (
             id,
             params.proposer,
-            params.startTime,
-            params.endTime,
+            // params.startTime,
+            // params.endTime,
             params.commands,
             params.values,
-            params.variables,
-            false,
-            false,
-            ProposalState.AWAIT
+            params.variables
         );
         emit Proposed();
     }
@@ -104,8 +91,16 @@ contract Governance is IGovernance, Scheduler, Initializer {
     /**
      * @notice 실행하기로 결정한 제안을 대기열에 등록하며, Council에서 지정된 투표 기간 이후에 실행되는 함수
      */
-    function insert(bytes32 uniqueId) external onlyCouncil {
-        queue(uniqueId);
+    function standby(bytes32 proposalId) external onlyCouncil returns (bool success) {
+        // proposal 이 실행되었거나 canceled가 아닌 경우.
+        queue(proposalId);
+        success = true;
+    }
+
+    function drop(bytes32 proposalId) external onlyCouncil returns (bool success) {
+        Proposal storage p = proposals[proposalId];
+        p.canceled = true;
+        success = true;
     }
 
     /**
@@ -115,6 +110,7 @@ contract Governance is IGovernance, Scheduler, Initializer {
         resolve(uniqueId);
         if (stateOf[uniqueId] == STATE.RESOLVED) {
             Proposal memory p = proposals[uniqueId];
+            // General Purpose EVM
             // for (uint256 i = 0; i > p.spells.length; i++) {
             //     (bool success, ) = p.spells[i].call{value: p.values[i]}(p.calldatas[i]);
             //     assert(success);

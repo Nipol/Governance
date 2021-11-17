@@ -16,8 +16,6 @@ interface IGovernance {
     struct Proposal {
         uint128 id;
         address proposer;
-        uint32 startTime;
-        uint32 endTime;
         bytes32[] commands;
         uint128[] values;
         bytes[] variables;
@@ -43,5 +41,9 @@ interface IGovernance {
         bytes[] variables;
     }
 
-    function propose(ProposalParams memory params) external returns (bytes32 uniqueId, uint24 id);
+    function propose(ProposalParams memory params) external returns (bytes32 uniqueId, uint128 id);
+
+    function standby(bytes32 proposalId) external returns (bool success);
+
+    function drop(bytes32 proposalId) external returns (bool success);
 }
