@@ -7,7 +7,7 @@
     // Update 'VARIANT' to pick a Node version: 10, 12, 14
     "args": {
       "VARIANT": "14",
-      "SOLC_VERSION": "0.8.9"
+      "SOLC_VERSION": "0.8.11"
     }
   },
   // Set *default* container specific settings.json values on container create.
@@ -25,12 +25,12 @@
     "solidity.formatter": "prettier",
     "solidity.compileUsingRemoteVersion": "latest",
     "solidity.enableLocalNodeCompiler": false,
+    "Solidity.solc.path": "/usr/local/bin/solc",
+    "Solidity.trace.server": "messages",
     "git.ignoreLimitWarning": true,
-    "editor.rulers": [
-      120
-    ],
+    "editor.rulers": [120],
     "workbench.colorCustomizations": {
-      "editorRuler.foreground": "#ff408042",
+      "editorRuler.foreground": "#ff408042"
     },
     "editor.formatOnSave": true,
     "[javascript]": {

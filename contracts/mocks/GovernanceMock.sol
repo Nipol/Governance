@@ -16,11 +16,32 @@ contract GovernanceMock is IGovernance {
         id = 0;
     }
 
-    function standby(bytes32 proposalId) external returns (bool success) {
+    function ready(bytes32 proposalId) external returns (bool success) {
         success = true;
     }
 
     function drop(bytes32 proposalId) external returns (bool success) {
         success = true;
+    }
+
+    function execute(bytes32 proposalId) external {}
+
+    function changeCouncil(address councilAddr) external {}
+
+    function changeDelay(uint32 executeDelay) external {}
+
+    function emergencyExecute(bytes32[] calldata spells, bytes[] memory elements) external {}
+
+    function emergencyCouncil(address councilorAddr) external {}
+
+    function isValidSignature(bytes32 digest, bytes calldata signature) external view returns (bytes4 magicValue) {}
+
+    function onERC721Received(
+        address _operator,
+        address _from,
+        uint256 _tokenId,
+        bytes memory _data
+    ) external returns (bytes4) {
+        return bytes4(keccak256("onERC721Received(address,address,uint256,bytes)"));
     }
 }

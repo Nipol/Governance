@@ -3,10 +3,13 @@
  */
 pragma solidity ^0.8.0;
 
+import "@beandao/contracts/interfaces/IERC165.sol";
+
 /**
  * @title ICouncil
+ * @author yoonsung.eth
  */
-interface ICouncil {
+interface ICouncil is IERC165 {
     /// @notice 투표 기간에 대한 정보만 기록
     enum ProposalState {
         UNKNOWN, // 사용되지 않음
@@ -40,9 +43,6 @@ interface ICouncil {
         address voteModule;
         uint64 slot1dummy64;
         /// SLOT 2 START ---------- ----------
-        // 이전 투표권 모듈
-        address prevModule;
-        uint96 slot2dummy96;
     }
 
     /// @notice 프로포절에 대한 투표 정보 기록
@@ -73,4 +73,23 @@ interface ICouncil {
     }
 
     event Proposed(bytes32 uid);
+
+    function initialize(
+        address voteModuleAddr,
+        uint96 proposalQuorum,
+        uint96 voteQuorum,
+        uint32 voteStartDelay,
+        uint32 votePeriod,
+        uint32 voteChangableDelay
+    ) external;
+
+    function propose(
+        address governance,
+        bytes32[] memory spells,
+        bytes[] calldata elements
+    ) external;
+
+    function vote(bytes32 proposalId, uint8 support) external;
+
+    function resolve(bytes32 proposalId) external returns (bool success);
 }

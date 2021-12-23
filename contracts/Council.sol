@@ -4,15 +4,14 @@
 pragma solidity ^0.8.0;
 
 import "@beandao/contracts/library/Initializer.sol";
-// import "@beandao/contracts/library/Scheduler.sol";
-
 import "./VoteModule/IModule.sol";
-import "./ICouncil.sol";
 import "./IGovernance.sol";
+import {ICouncil, IERC165} from "./ICouncil.sol";
 
 /**
  * @title Council
  * @notice 투표권과 투표 정보를 컨트롤하는 컨트랙트. 거버넌스 정보는 이곳에 저장하지 않으며,
+ * @dev 다른 투표 모듈과의 상호작용 필요함
  */
 contract Council is ICouncil, Initializer {
     string public constant version = "1";
@@ -61,18 +60,20 @@ contract Council is ICouncil, Initializer {
         }
     }
 
+    receive() external payable {
+        revert();
+    }
+
     /**
      * @notice 거버넌스로 제안서를 보내는 역할을 하며, 해당 컨트랙트에서도 투표만을 위한 제안서를 동일하게 생성한다.
      * @param governance Council이 목표로 하는 거버넌스 컨트랙트 주소
-     * @param commands GPE-command array
-     * @param values commands with value array
-     * @param variables variable for commands array
+     * @param spells GPE-command array
+     * @param elements variable for commands array
      */
     function propose(
         address governance,
-        bytes32[] memory commands,
-        uint128[] calldata values,
-        bytes[] calldata variables
+        bytes32[] memory spells,
+        bytes[] calldata elements
     ) external {
         // 한 블럭 이전 or 지난 epoch에, msg.sender의 보팅 권한이 최소 쿼럼을 만족하는지 체크
         require(
@@ -86,11 +87,8 @@ contract Council is ICouncil, Initializer {
         // 거버넌스 컨트랙트에 등록할 proposal 정보
         IGovernance.ProposalParams memory params = IGovernance.ProposalParams({
             proposer: msg.sender,
-            startTime: start,
-            endTime: end,
-            commands: commands,
-            values: values,
-            variables: variables
+            spells: spells,
+            elements: elements
         });
 
         // 거버넌스 컨트랙트에 proposal 등록
@@ -159,7 +157,7 @@ contract Council is ICouncil, Initializer {
         // yea > nay -> queued -> 거버넌스의 대기열에 등록
         // nay < yea -> leftout -> 거버넌스의 canceling
         (p.queued, p.leftout) = p.yea > p.nay
-            ? (IGovernance(p.governance).standby(proposalId), false)
+            ? (IGovernance(p.governance).ready(proposalId), false)
             : (false, IGovernance(p.governance).drop(proposalId));
         success = true;
     }
@@ -177,5 +175,9 @@ contract Council is ICouncil, Initializer {
                 ? ProposalState.LEFTOUT
                 : ProposalState.STANDBY;
         }
+    }
+
+    function supportsInterface(bytes4 interfaceID) external pure returns (bool) {
+        return interfaceID == type(ICouncil).interfaceId || interfaceID == type(IERC165).interfaceId;
     }
 }

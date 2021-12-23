@@ -4,47 +4,28 @@
 
 pragma solidity ^0.8.0;
 
-import "@beandao/contracts/interfaces/IERC20.sol";
-import "@beandao/contracts/library/Ownership.sol";
+import "@beandao/contracts/interfaces/IMint.sol";
+import "@beandao/contracts/interfaces/IBurn.sol";
+import "@beandao/contracts/interfaces/IERC165.sol";
+import {Initializer} from "@beandao/contracts/library/Initializer.sol";
+import {Ownership, IERC173} from "@beandao/contracts/library/Ownership.sol";
+import {ERC20, IERC20} from "@beandao/contracts/library/ERC20.sol";
+import {ERC2612, IERC2612} from "@beandao/contracts/library/ERC2612.sol";
+import {Multicall, IMulticall} from "@beandao/contracts/library/Multicall.sol";
 
-contract TokenMock is IERC20, Ownership {
-    string public name;
-    string public symbol;
-    uint8 public decimals;
-    uint256 public totalSupply;
-
-    mapping(address => uint256) public balanceOf;
-    mapping(address => mapping(address => uint256)) public allowance;
-
-    constructor(
-        string memory tokenName,
-        string memory tokenSymbol,
-        uint8 tokenDecimals
-    ) {
-        name = tokenName;
-        symbol = tokenSymbol;
-        decimals = tokenDecimals;
+contract StandardToken is ERC20, ERC2612, Ownership, Multicall, Initializer, IERC165, IBurn, IMint {
+    function initialize(
+        string memory _name,
+        string memory _symbol,
+        uint8 _decimals
+    ) external initializer {
+        version = "1";
+        name = _name;
+        symbol = _symbol;
+        decimals = _decimals;
         balanceOf[address(this)] = type(uint256).max;
-    }
-
-    function approve(address spender, uint256 value) external returns (bool) {
-        _approve(msg.sender, spender, value);
-        return true;
-    }
-
-    function transfer(address to, uint256 value) external returns (bool) {
-        _transfer(msg.sender, to, value);
-        return true;
-    }
-
-    function transferFrom(
-        address from,
-        address to,
-        uint256 value
-    ) external override returns (bool) {
-        allowance[from][msg.sender] -= value;
-        _transfer(from, to, value);
-        return true;
+        _initDomainSeparator(_name, version);
+        _transferOwnership(msg.sender);
     }
 
     function mint(uint256 value) external onlyOwner returns (bool) {
@@ -76,23 +57,14 @@ contract TokenMock is IERC20, Ownership {
         return true;
     }
 
-    function _transfer(
-        address from,
-        address to,
-        uint256 value
-    ) internal {
-        balanceOf[from] -= value;
-        balanceOf[to] += value;
-        emit Transfer(from, to, value);
-    }
-
-    function _approve(
-        address _owner,
-        address spender,
-        uint256 value
-    ) internal {
-        require(spender != address(this), "ERC20/Impossible-Approve-to-Self");
-        allowance[_owner][spender] = value;
-        emit Approval(_owner, spender, value);
+    function supportsInterface(bytes4 interfaceID) external pure returns (bool) {
+        return
+            type(IERC20).interfaceId == interfaceID ||
+            type(IERC2612).interfaceId == interfaceID ||
+            type(IERC173).interfaceId == interfaceID ||
+            type(IERC165).interfaceId == interfaceID ||
+            type(IMulticall).interfaceId == interfaceID ||
+            type(IBurn).interfaceId == interfaceID ||
+            type(IMint).interfaceId == interfaceID;
     }
 }
