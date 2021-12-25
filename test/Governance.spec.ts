@@ -1,7 +1,19 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
-import { BigNumber, constants, Contract, Signer } from 'ethers';
-import { defaultAbiCoder, Interface, keccak256, concat, hexZeroPad, hexlify } from 'ethers/lib/utils';
+import { BigNumber, constants, Contract, Signer, Wallet } from 'ethers';
+import {
+  defaultAbiCoder,
+  Interface,
+  keccak256,
+  concat,
+  hexZeroPad,
+  hexlify,
+  joinSignature,
+  SigningKey,
+  splitSignature,
+  arrayify,
+  hashMessage,
+} from 'ethers/lib/utils';
 
 const day = BigNumber.from('60').mul('60').mul('24');
 export async function latestTimestamp(): Promise<number> {
@@ -515,6 +527,326 @@ describe.only('Governance', () => {
 
     it('should be revert from non governance address', async () => {
       await expect(Governance.changeDelay(day.mul('2'))).revertedWith('Governance/Only-Governance');
+    });
+  });
+
+  describe('#emergencyExecute()', () => {
+    beforeEach(async () => {
+      await Governance.initialize('bean the DAO', WalletAddress, day);
+    });
+
+    it('should be success execute', async () => {
+      const ABI = ['function balanceOf(address target)', 'function transfer(address to,uint256 value)'];
+      const interfaces = new Interface(ABI);
+      const balanceOfsig = interfaces.getSighash('balanceOf');
+      const transferSig = interfaces.getSighash('transfer');
+      const elements = [
+        '0x000000000000000000000000' + Governance.address.slice(2), // for balanceof
+        '0x000000000000000000000000' + ToAddress.slice(2), // transfer
+      ];
+
+      // 거버넌스가 가지고 있는 전체 토큰 수량을 쿼리 한 후
+      // 해당 수량만큼 다른 주소로 전송함.
+      const spells = [
+        concat([
+          balanceOfsig, // function selector
+          '0x40', // flag return value not tuple
+          '0x00', // value position from elements array
+          '0xFF',
+          '0xFF',
+          '0xFF',
+          '0xFF',
+          '0xFF',
+          '0x00',
+          Token.address, // address
+        ]),
+        concat([
+          transferSig, // function selector
+          '0x40', // flag
+          '0x01', // value position from elements array
+          '0x00',
+          '0xFF',
+          '0xFF',
+          '0xFF',
+          '0xFF',
+          '0xFF',
+          Token.address, // address
+        ]),
+      ];
+
+      await expect(Governance.emergencyExecute(spells, elements))
+        .to.emit(Token, 'Transfer')
+        .withArgs(Governance.address, ToAddress, initialToken);
+      expect(await Governance.nonce()).to.equal('1');
+    });
+
+    it('should be revert with from non council contract', async () => {
+      await expect(Governance.connect(To).emergencyExecute([], [])).revertedWith('Governance/Only-Council');
+      expect(await Governance.nonce()).to.equal('0');
+    });
+  });
+
+  describe('#emergencyCouncil()', () => {
+    let expectedId: string;
+
+    beforeEach(async () => {
+      await Governance.initialize('bean the DAO', WalletAddress, day);
+    });
+
+    it('should be success change Council', async () => {
+      const ABI = ['function emergencyCouncil(address councilorAddr) external'];
+      const interfaces = new Interface(ABI);
+      const emergencyCouncilsig = interfaces.getSighash('emergencyCouncil');
+      const elements = [
+        '0x000000000000000000000000' + ToAddress.slice(2), // transfer
+      ];
+
+      // 거버넌스가 가지고 있는 전체 토큰 수량을 쿼리 한 후
+      // 해당 수량만큼 다른 주소로 전송함.
+      const spells = [
+        concat([
+          emergencyCouncilsig, // function selector
+          '0x40', // flag return value not tuple
+          '0x00', // value position from elements array
+          '0xFF',
+          '0xFF',
+          '0xFF',
+          '0xFF',
+          '0xFF',
+          '0xFF',
+          Governance.address, // address
+        ]),
+      ];
+
+      const getVersion = await Governance.version();
+      const getNonce = (await Governance.nonce()).add(1);
+      expectedId = keccak256(
+        defaultAbiCoder.encode(
+          ['address', 'string', 'address', 'uint128'],
+          [Governance.address, getVersion, WalletAddress, getNonce],
+        ),
+      );
+      const param = { proposer: WalletAddress, spells: spells, elements: elements };
+      await Governance.propose(param);
+      await Governance.ready(expectedId);
+
+      let now = await latestTimestamp();
+      const nextLevel = day.add(now).add('1');
+      await ethers.provider.send('evm_setNextBlockTimestamp', [nextLevel.toNumber()]);
+
+      expect(await Governance.delay()).to.equal(day);
+      await Governance.execute(expectedId);
+      expect(await Governance.council()).to.equal(ToAddress);
+    });
+
+    it('should be revert with already registerd council address', async () => {
+      const ABI = ['function emergencyCouncil(address councilorAddr) external'];
+      const interfaces = new Interface(ABI);
+      const emergencyCouncilsig = interfaces.getSighash('emergencyCouncil');
+      const elements = [
+        '0x000000000000000000000000' + WalletAddress.slice(2), // transfer
+      ];
+
+      // 거버넌스가 가지고 있는 전체 토큰 수량을 쿼리 한 후
+      // 해당 수량만큼 다른 주소로 전송함.
+      const spells = [
+        concat([
+          emergencyCouncilsig, // function selector
+          '0x40', // flag return value not tuple
+          '0x00', // value position from elements array
+          '0xFF',
+          '0xFF',
+          '0xFF',
+          '0xFF',
+          '0xFF',
+          '0xFF',
+          Governance.address, // address
+        ]),
+      ];
+
+      const getVersion = await Governance.version();
+      const getNonce = (await Governance.nonce()).add(1);
+      expectedId = keccak256(
+        defaultAbiCoder.encode(
+          ['address', 'string', 'address', 'uint128'],
+          [Governance.address, getVersion, WalletAddress, getNonce],
+        ),
+      );
+      const param = { proposer: WalletAddress, spells: spells, elements: elements };
+      await Governance.propose(param);
+      await Governance.ready(expectedId);
+
+      let now = await latestTimestamp();
+      const nextLevel = day.add(now).add('1');
+      await ethers.provider.send('evm_setNextBlockTimestamp', [nextLevel.toNumber()]);
+
+      expect(await Governance.delay()).to.equal(day);
+      await expect(Governance.execute(expectedId)).revertedWith('Governance/Invalid-Address');
+      expect(await Governance.council()).to.equal(WalletAddress);
+    });
+
+    it('should be revert with governance address', async () => {
+      const ABI = ['function emergencyCouncil(address councilorAddr) external'];
+      const interfaces = new Interface(ABI);
+      const emergencyCouncilsig = interfaces.getSighash('emergencyCouncil');
+      const elements = [
+        '0x000000000000000000000000' + Governance.address.slice(2), // transfer
+      ];
+
+      // 거버넌스가 가지고 있는 전체 토큰 수량을 쿼리 한 후
+      // 해당 수량만큼 다른 주소로 전송함.
+      const spells = [
+        concat([
+          emergencyCouncilsig, // function selector
+          '0x40', // flag return value not tuple
+          '0x00', // value position from elements array
+          '0xFF',
+          '0xFF',
+          '0xFF',
+          '0xFF',
+          '0xFF',
+          '0xFF',
+          Governance.address, // address
+        ]),
+      ];
+
+      const getVersion = await Governance.version();
+      const getNonce = (await Governance.nonce()).add(1);
+      expectedId = keccak256(
+        defaultAbiCoder.encode(
+          ['address', 'string', 'address', 'uint128'],
+          [Governance.address, getVersion, WalletAddress, getNonce],
+        ),
+      );
+      const param = { proposer: WalletAddress, spells: spells, elements: elements };
+      await Governance.propose(param);
+      await Governance.ready(expectedId);
+
+      let now = await latestTimestamp();
+      const nextLevel = day.add(now).add('1');
+      await ethers.provider.send('evm_setNextBlockTimestamp', [nextLevel.toNumber()]);
+
+      expect(await Governance.delay()).to.equal(day);
+      await expect(Governance.execute(expectedId)).revertedWith('Governance/Invalid-Address');
+      expect(await Governance.council()).to.equal(WalletAddress);
+    });
+
+    it('should be reverted with self delegate call', async () => {
+      const ABI = ['function changeCouncil(address councilAddr) external'];
+      const interfaces = new Interface(ABI);
+      const changeCouncilsig = interfaces.getSighash('changeCouncil');
+      const elements = [
+        '0x000000000000000000000000' + ToAddress.slice(2), // for changeCouncil
+      ];
+
+      const spells = [
+        concat([
+          changeCouncilsig, // function selector
+          '0x00', // flag return value not tuple
+          '0x00', // value position from elements array
+          '0xFF',
+          '0xFF',
+          '0xFF',
+          '0xFF',
+          '0xFF',
+          '0xFF',
+          Governance.address, // address
+        ]),
+      ];
+      const getVersion = await Governance.version();
+      const getNonce = (await Governance.nonce()).add(1);
+      expectedId = keccak256(
+        defaultAbiCoder.encode(
+          ['address', 'string', 'address', 'uint128'],
+          [Governance.address, getVersion, WalletAddress, getNonce],
+        ),
+      );
+      const param = { proposer: WalletAddress, spells: spells, elements: elements };
+      await Governance.propose(param);
+      await Governance.ready(expectedId);
+
+      let now = await latestTimestamp();
+      const nextLevel = day.add(now).add('1');
+      await ethers.provider.send('evm_setNextBlockTimestamp', [nextLevel.toNumber()]);
+
+      await expect(Governance.execute(expectedId)).revertedWith('Governance/Only-Governance');
+      expect(await Governance.council()).to.equal(WalletAddress);
+    });
+  });
+
+  describe('#isValidSignature()', () => {
+    beforeEach(async () => {
+      await Governance.initialize('bean the DAO', WalletAddress, day);
+    });
+
+    it('should be success valid signature', async () => {
+      const hash = keccak256(hexlify('0x321321'));
+      const sig = joinSignature(
+        new SigningKey('0x7c299dda7c704f9d474b6ca5d7fee0b490c8decca493b5764541fe5ec6b65114').signDigest(hash),
+      );
+      // const sig = await wallet.signMessage(hash); //"\x19Ethereum Signed Message:\n" + len(message).
+      expect(await Governance.isValidSignature(hash, sig)).to.equal('0x1626ba7e');
+    });
+
+    it('should be success invalid hash', async () => {
+      const hash = hashMessage(hexlify('0x321321'));
+      const sig = joinSignature(
+        new SigningKey('0x7c299dda7c704f9d474b6ca5d7fee0b490c8decca493b5764541fe5ec6b65114').signDigest(hash),
+      );
+      expect(await Governance.isValidSignature(hexZeroPad(hexlify('0x321321'), 32), sig)).to.equal('0xffffffff');
+    });
+
+    it('should be revert invalid signature s', async () => {
+      const hash = keccak256(hexlify('0x321321'));
+      const splited = new SigningKey('0x7c299dda7c704f9d474b6ca5d7fee0b490c8decca493b5764541fe5ec6b65114').signDigest(
+        hash,
+      );
+
+      const sig = `${
+        splited.r
+      }${'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0'.toLowerCase()}${hexlify(splited.v).slice(
+        2,
+      )}`;
+      await expect(Governance.isValidSignature(hash, sig)).revertedWith("invalid signature 's' value");
+    });
+
+    it('should be revert invalid signature v', async () => {
+      const hash = keccak256(hexlify('0x321321'));
+      const splited = new SigningKey('0x7c299dda7c704f9d474b6ca5d7fee0b490c8decca493b5764541fe5ec6b65114').signDigest(
+        hash,
+      );
+
+      const sig = `${splited.r}${splited.s.slice(2)}${hexlify(30).slice(2)}`;
+      await expect(Governance.isValidSignature(hash, sig)).revertedWith("invalid signature 'v' value");
+    });
+
+    it('should be revert invalid signature length', async () => {
+      const hash = keccak256(hexlify('0x321321'));
+      const splited = new SigningKey('0x7c299dda7c704f9d474b6ca5d7fee0b490c8decca493b5764541fe5ec6b65114').signDigest(
+        hash,
+      );
+
+      const sig = `${splited.r}${splited.s.slice(2)}`;
+      await expect(Governance.isValidSignature(hash, sig)).revertedWith('invalid signature length');
+    });
+  });
+
+  describe('#onERC721Received()', () => {
+    beforeEach(async () => {
+      await Governance.initialize('bean the DAO', WalletAddress, day);
+    });
+
+    it('should be success receive', async () => {
+      const NFT = await (
+        await ethers.getContractFactory('contracts/mocks/ERC721.sol:ERC721Mock', wallet)
+      ).deploy('Sample', 'SMP');
+
+      await NFT.mint('0');
+      await NFT.setApprovalForAll(ToAddress, true);
+      expect(await NFT.isApprovedForAll(WalletAddress, ToAddress)).to.equal(true);
+      await NFT.connect(To)['safeTransferFrom(address,address,uint256)'](WalletAddress, Governance.address, '0');
+      expect(await NFT.ownerOf('0')).to.equal(Governance.address);
+      expect(await NFT.isApprovedForAll(Governance.address, ToAddress)).to.equal(false);
     });
   });
 });

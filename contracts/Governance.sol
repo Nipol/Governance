@@ -12,6 +12,8 @@ import "@beandao/contracts/interfaces/IERC721.sol";
 import "./IGovernance.sol";
 import "./ICouncil.sol";
 
+import "hardhat/console.sol";
+
 /**
  * @title Governance
  * @author yoonsung.eth
@@ -56,7 +58,7 @@ contract Governance is IGovernance, Wizadry, Scheduler, Initializer {
      * @notice 해당 호출은 이사회 컨트랙트만 가능함.
      */
     modifier onlyCouncil() {
-        require(msg.sender == council);
+        require(msg.sender == council, "Governance/Only-Council");
         _;
     }
 
@@ -164,22 +166,23 @@ contract Governance is IGovernance, Wizadry, Scheduler, Initializer {
      * @notice 현재 연결되어 있는 카운슬을 다른 주소로 변경하며, 이때 어떤 주소로든 이관할 수 있다.
      */
     function emergencyCouncil(address councilorAddr) external onlyGov {
+        require(council != councilorAddr && councilorAddr != address(this), "Governance/Invalid-Address");
         council = councilorAddr;
     }
 
     /**
      * @notice Council이 EOA로 등록된 경우, EOA가 Governance를 대신하여 Off-chain 투표를 수행하도록 합니다.
      */
-    function isValidSignature(bytes32 digest, bytes calldata signature) external view returns (bytes4 magicValue) {
+    function isValidSignature(bytes32 digest, bytes memory signature) external view returns (bytes4 magicValue) {
         require(signature.length == 65, "invalid signature length");
+        uint8 v;
         bytes32 r;
         bytes32 s;
-        uint8 v;
         // solhint-disable-next-line no-inline-assembly
         assembly {
-            r := mload(add(signature.offset, 32))
-            s := mload(add(signature.offset, 64))
-            v := and(mload(add(signature.offset, 65)), 255)
+            v := and(mload(add(signature, 65)), 255)
+            r := mload(add(signature, 32))
+            s := mload(add(signature, 64))
         }
 
         if (uint256(s) > 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0) {
@@ -190,11 +193,12 @@ contract Governance is IGovernance, Wizadry, Scheduler, Initializer {
             revert("invalid signature 'v' value");
         }
 
-        address signer = ecrecover(keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", digest)), v, r, s);
+        address signer = ecrecover(digest, v, r, s);
 
         assert(signer != address(0));
         if (council == signer) {
-            magicValue = bytes4(keccak256("isValidSignature(bytes32,bytes)"));
+            // bytes4(keccak256("isValidSignature(bytes32,bytes)"))
+            magicValue = 0x1626ba7e;
         } else {
             magicValue = 0xffffffff;
         }
@@ -220,12 +224,5 @@ contract Governance is IGovernance, Wizadry, Scheduler, Initializer {
     ) external returns (bytes4) {
         IERC721(msg.sender).setApprovalForAll(_operator, false);
         return bytes4(keccak256("onERC721Received(address,address,uint256,bytes)"));
-    }
-
-    /**
-     * @notice 매번 version 정보가 업데이트 될 때 마다 변경되기 때문에, 매번 계산하는 방식
-     */
-    function DOMAIN_SEPARATOR() external view returns (bytes32 ds) {
-        ds = EIP712.hashDomainSeperator(name, version, address(this));
     }
 }
