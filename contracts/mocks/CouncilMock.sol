@@ -16,11 +16,12 @@ contract CouncilMock is ICouncil {
 
     function initialize(
         address voteModuleAddr,
-        uint96 proposalQuorum,
-        uint96 voteQuorum,
-        uint32 voteStartDelay,
-        uint32 votePeriod,
-        uint32 voteChangableDelay
+        uint16 proposalQuorum,
+        uint16 voteQuorum,
+        uint16 emergencyQuorum,
+        uint16 voteStartDelay,
+        uint16 votePeriod,
+        uint16 voteChangableDelay
     ) external {}
 
     function propose(
@@ -29,7 +30,7 @@ contract CouncilMock is ICouncil {
         bytes[] calldata elements
     ) external {}
 
-    function vote(bytes32 proposalId, uint8 support) external {}
+    function vote(bytes32 proposalId, bool support) external {}
 
     function resolve(bytes32 proposalId) external returns (bool success) {}
 

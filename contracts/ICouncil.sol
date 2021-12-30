@@ -28,21 +28,20 @@ interface ICouncil is IERC165 {
 
     struct Slot {
         /// SLOT 0 START ---------- ----------
-        // 프로포절 제안 정족 수량 - ex) 총 발행량의 10%
-        uint96 proposalQuorum;
-        // 투표 정족 수 - ex) 총 발행량의 50%
-        uint96 voteQuorum;
+        // 제안 정족 수량 비율 - ex) 총 발행량의 10%
+        uint16 proposalQuorum;
+        // 제안 통과 정족 수 - ex) 총 발행량의 50%
+        uint16 voteQuorum;
+        // 긴급 제안 통과 비율 - ex) 총 발행량의 95%
+        uint16 emergencyQuorum;
         // 투표 시작 지연 기간 - ex) 1일
-        uint32 voteStartDelay;
+        uint16 voteStartDelay;
         // 투표 기간 - ex) 5일
-        uint32 votePeriod;
-        /// SLOT 1 START ---------- ----------
+        uint16 votePeriod;
         // 투표 변경 가능 period - ex) 2일
-        uint32 voteChangableDelay;
-        // 투표권 모듈 컨트랙트 정보
+        uint16 voteChangableDelay;
+        // 투표권 모듈 컨트랙트 정보 160bit
         address voteModule;
-        uint64 slot1dummy64;
-        /// SLOT 2 START ---------- ----------
     }
 
     /// @notice 프로포절에 대한 투표 정보 기록
@@ -51,12 +50,12 @@ interface ICouncil is IERC165 {
         address governance;
         uint32 startTime;
         uint32 endTime;
-        uint32 timestamp; /// slot 0
+        uint32 timestamp;
         /// SLOT 1 START ---------- ----------
         uint32 blockNumber;
         uint32 epoch;
         uint96 yea;
-        uint96 nay; /// slot 1
+        uint96 nay;
         /// SLOT 2 START ---------- ----------
         uint96 totalVotes;
         bool queued;
@@ -72,15 +71,18 @@ interface ICouncil is IERC165 {
         VoteState state;
     }
 
-    event Proposed(bytes32 uid);
+    event Proposed(bytes32 indexed uid);
+    event Voted(address indexed voter, bytes32 indexed uid, uint256 power);
+    event Resolved(bytes32 indexed uid);
 
     function initialize(
         address voteModuleAddr,
-        uint96 proposalQuorum,
-        uint96 voteQuorum,
-        uint32 voteStartDelay,
-        uint32 votePeriod,
-        uint32 voteChangableDelay
+        uint16 proposalQuorum,
+        uint16 voteQuorum,
+        uint16 emergencyQuorum,
+        uint16 voteStartDelay,
+        uint16 votePeriod,
+        uint16 voteChangableDelay
     ) external;
 
     function propose(
@@ -89,7 +91,7 @@ interface ICouncil is IERC165 {
         bytes[] calldata elements
     ) external;
 
-    function vote(bytes32 proposalId, uint8 support) external;
+    function vote(bytes32 proposalId, bool support) external;
 
     function resolve(bytes32 proposalId) external returns (bool success);
 }

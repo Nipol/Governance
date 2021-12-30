@@ -20,7 +20,7 @@ export async function latestTimestamp(): Promise<number> {
   return (await ethers.provider.getBlock('latest')).timestamp;
 }
 
-describe.only('Governance', () => {
+describe('Governance', () => {
   let Governance: Contract;
   let Token: Contract;
 
@@ -40,8 +40,9 @@ describe.only('Governance', () => {
     ToAddress = await To.getAddress();
 
     Governance = await (await ethers.getContractFactory('contracts/Governance.sol:Governance', wallet)).deploy();
-    Token = await (await ethers.getContractFactory('contracts/mocks/ERC20.sol:StandardToken', wallet)).deploy();
-    await Token.initialize('bean', 'bean', 18);
+    Token = await (
+      await ethers.getContractFactory('contracts/mocks/ERC20.sol:StandardToken', wallet)
+    ).deploy('bean', 'bean', 18);
     await Token.mintTo(Governance.address, initialToken); // 거버넌스에 토큰 100개 생성
   });
 

@@ -14,11 +14,11 @@ import {ERC2612, IERC2612} from "@beandao/contracts/library/ERC2612.sol";
 import {Multicall, IMulticall} from "@beandao/contracts/library/Multicall.sol";
 
 contract StandardToken is ERC20, ERC2612, Ownership, Multicall, Initializer, IERC165, IBurn, IMint {
-    function initialize(
+    constructor(
         string memory _name,
         string memory _symbol,
         uint8 _decimals
-    ) external initializer {
+    ) initializer {
         version = "1";
         name = _name;
         symbol = _symbol;
