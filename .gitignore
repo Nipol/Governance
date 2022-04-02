@@ -11,6 +11,12 @@ crytic-export
 .DS_Store
 contracts/README.md
 contracts/build
-deploy/*
-test/*.json
-.env.*
+.env.production
+
+deployments/localhost
+
+graph-node/data
+subgraph/subgraph.yaml
+subgraph/generated
+subgraph/abis/*
+hardhat/*.txt

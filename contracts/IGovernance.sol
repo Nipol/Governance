@@ -3,8 +3,8 @@
  */
 pragma solidity ^0.8.0;
 
-import "@beandao/contracts/interfaces/IERC721TokenReceiver.sol";
-import "@beandao/contracts/interfaces/IERC1271.sol";
+import "bean-contracts/contracts/interfaces/IERC721TokenReceiver.sol";
+import "bean-contracts/contracts/interfaces/IERC1271.sol";
 
 /**
  * @title IGovernance
@@ -19,8 +19,7 @@ interface IGovernance is IERC1271, IERC721TokenReceiver {
     struct Proposal {
         uint128 id;
         address proposer;
-        bytes32[] spells;
-        bytes[] elements;
+        bytes32 magichash;
         bool executed;
         bool canceled;
         ProposalState state;
@@ -28,8 +27,7 @@ interface IGovernance is IERC1271, IERC721TokenReceiver {
 
     struct ProposalParams {
         address proposer;
-        bytes32[] spells;
-        bytes[] elements;
+        bytes32 magichash;
     }
 
     struct VoteParam {
@@ -40,25 +38,30 @@ interface IGovernance is IERC1271, IERC721TokenReceiver {
 
     event Proposed(
         bytes32 indexed proposalId,
+        string version,
         uint128 id,
-        bytes32[] spells,
         address indexed council,
-        address indexed proposer
+        address indexed proposer,
+        bytes32 magichash
     );
 
-    event Ready(bytes32 indexed proposalId);
+    event Approved(bytes32 indexed proposalId);
 
     event Dropped(bytes32 indexed proposalId);
 
     event Executed(bytes32 indexed proposalId);
 
-    function propose(ProposalParams memory params) external returns (bytes32 proposalId, uint128 id);
+    function propose(ProposalParams calldata params) external returns (bytes32 proposalId, uint128 id);
 
-    function ready(bytes32 proposalId) external returns (bool success);
+    function approve(bytes32 proposalId) external returns (bool success);
 
     function drop(bytes32 proposalId) external returns (bool success);
 
-    function execute(bytes32 proposalId) external;
+    function execute(
+        bytes32 proposalId,
+        bytes32[] calldata spells,
+        bytes[] calldata elements
+    ) external;
 
     function changeCouncil(address councilAddr) external;
 

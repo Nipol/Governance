@@ -16,7 +16,7 @@ contract GovernanceMock is IGovernance {
         id = 0;
     }
 
-    function ready(bytes32 proposalId) external returns (bool success) {
+    function approve(bytes32 proposalId) external returns (bool success) {
         success = true;
     }
 
@@ -24,7 +24,11 @@ contract GovernanceMock is IGovernance {
         success = true;
     }
 
-    function execute(bytes32 proposalId) external {}
+    function execute(
+        bytes32 proposalId,
+        bytes32[] calldata spells,
+        bytes[] calldata elements
+    ) external {}
 
     function changeCouncil(address councilAddr) external {}
 
@@ -37,11 +41,11 @@ contract GovernanceMock is IGovernance {
     function isValidSignature(bytes32 digest, bytes calldata signature) external view returns (bytes4 magicValue) {}
 
     function onERC721Received(
-        address _operator,
-        address _from,
-        uint256 _tokenId,
-        bytes memory _data
-    ) external returns (bytes4) {
+        address,
+        address,
+        uint256,
+        bytes memory
+    ) external pure returns (bytes4) {
         return bytes4(keccak256("onERC721Received(address,address,uint256,bytes)"));
     }
 }

@@ -3,10 +3,23 @@
  */
 pragma solidity ^0.8.0;
 
-import "@beandao/contracts/library/Initializer.sol";
+import "bean-contracts/contracts/library/Initializer.sol";
+import "bean-contracts/contracts/interfaces/IERC165.sol";
 import "./VoteModule/IModule.sol";
 import "./IGovernance.sol";
-import {ICouncil, IERC165} from "./ICouncil.sol";
+import "./ICouncil.sol";
+
+error NotReachedDelay();
+
+error NotReachedQuorum();
+
+error NotResolvable(bytes32 proposalId);
+
+error AlreadyProposed(bytes32 proposalId);
+
+error NotActiveProposal(bytes32 proposalId);
+
+error AlreadyVoted(bytes32 proposalId, bool vote);
 
 /**
  * @title Council
@@ -14,7 +27,7 @@ import {ICouncil, IERC165} from "./ICouncil.sol";
  * 투표는 최대 255개의 타입을 가질 수 있으며, 타입마다 해석의 방식을 지정할 수 있다.
  * @dev
  */
-contract Council is ICouncil, Initializer {
+contract Council is IERC165, ICouncil, Initializer {
     string public constant version = "1";
     Slot public slot;
     /**
@@ -35,6 +48,7 @@ contract Council is ICouncil, Initializer {
      */
     function initialize(
         address voteModuleAddr,
+        bytes calldata voteModuleData,
         uint16 proposalQuorum,
         uint16 voteQuorum,
         uint16 emergencyQuorum,
@@ -46,11 +60,10 @@ contract Council is ICouncil, Initializer {
         require(proposalQuorum <= 1e4);
         require(voteQuorum <= 1e4);
         require(emergencyQuorum <= 1e4);
-        slot.voteModule = voteModuleAddr;
+        setVoteModule(voteModuleAddr, voteModuleData);
         slot.proposalQuorum = proposalQuorum;
         slot.voteQuorum = voteQuorum;
         slot.emergencyQuorum = emergencyQuorum;
-
         slot.voteStartDelay = voteStartDelay;
         slot.votePeriod = votePeriod;
         slot.voteChangableDelay = voteChangableDelay;
@@ -91,23 +104,21 @@ contract Council is ICouncil, Initializer {
      */
     function propose(
         address governance,
-        bytes32[] memory spells,
+        bytes32[] calldata spells,
         bytes[] calldata elements
     ) external {
+        Slot memory s = slot;
         // 한 블럭 이전 or 지난 epoch에, msg.sender의 보팅 권한이 최소 쿼럼을 만족하는지 체크
-        require(
-            IModule(address(this)).getPriorRate(msg.sender, block.number - 1) >= slot.proposalQuorum,
-            "Council/Not Reached Quorum"
-        );
+        if (IModule(address(this)).getPriorRate(msg.sender, block.number - 1) < s.proposalQuorum)
+            revert NotReachedQuorum();
 
         // 투표 시작 지연 추가
-        uint32 start = uint32(block.timestamp) + toSecond(slot.voteStartDelay);
-        uint32 end = start + toSecond(slot.votePeriod);
-        // 거버넌스 컨트랙트에 등록할 proposal 정보
+        uint32 start = uint32(block.timestamp) + toSecond(s.voteStartDelay);
+        uint32 end = start + toSecond(s.votePeriod);
+        // 거버넌스에 등록할 proposal 정보
         IGovernance.ProposalParams memory params = IGovernance.ProposalParams({
             proposer: msg.sender,
-            spells: spells,
-            elements: elements
+            magichash: keccak256(abi.encode(keccak256(abi.encodePacked(spells)), keccak256(abi.encode(elements))))
         });
 
         // 거버넌스 컨트랙트에 proposal 등록
@@ -115,13 +126,16 @@ contract Council is ICouncil, Initializer {
         // 반횐된 uid에 대해 council 버전의 proposal 저장.
         (ProposalState state, Proposal storage p) = getProposalState(proposalId);
         // 한번도 사용되지 않은 유니크 아이디인지 확인
-        assert(state == ProposalState.UNKNOWN); // check never used
-        (p.governance, p.startTime, p.endTime, p.timestamp, p.blockNumber) = (
+        if (state != ProposalState.UNKNOWN) revert AlreadyProposed(proposalId);
+
+        (p.governance, p.startTime, p.endTime, p.timestamp, p.blockNumber, p.spells, p.elements) = (
             governance,
             start,
             end,
             uint32(block.timestamp), // block timestamp for Verification.
-            uint32(block.number) // block number for Verification.
+            uint32(block.number), // block number for Verification.
+            spells,
+            elements
         );
         // p.epoch = 0 // Epoch logic... TODO
         emit Proposed(proposalId);
@@ -149,7 +163,7 @@ contract Council is ICouncil, Initializer {
     function vote(bytes32 proposalId, bool support) external {
         (ProposalState state, Proposal storage p) = getProposalState(proposalId);
         // 존재하는 Proposal인지 & 활성 상태인지 확인
-        assert(state == ProposalState.ACTIVE);
+        if (state != ProposalState.ACTIVE) revert NotActiveProposal(proposalId);
         // 기록된 블록의 - 1 기준으로 투표권 확인
         uint256 power = IModule(address(this)).getPriorPower(msg.sender, p.blockNumber - 1);
         // 제안서의 현재 투표 상태
@@ -163,8 +177,8 @@ contract Council is ICouncil, Initializer {
             p.totalVotes += uint96(power);
         } else {
             // 투표 변경 딜레이 확인
-            assert((v.ts + toSecond(slot.voteChangableDelay)) < uint32(block.timestamp));
-            assert(support ? p.nay > 0 : p.yea > 0);
+            if ((v.ts + toSecond(slot.voteChangableDelay)) > uint32(block.timestamp)) revert NotReachedDelay();
+            if (!support ? p.nay > 0 : p.yea > 0) revert AlreadyVoted(proposalId, support);
             // 새로운 타임스탬프 기록
             v.ts = uint32(block.timestamp);
             // 이전 투표 파워 삭제
@@ -186,16 +200,15 @@ contract Council is ICouncil, Initializer {
      */
     function resolve(bytes32 proposalId) external returns (bool success) {
         (ProposalState state, Proposal storage p) = getProposalState(proposalId);
-        require(state == ProposalState.STANDBY, "Council/Can't Resolvable");
+        if (state != ProposalState.STANDBY) revert NotResolvable(proposalId);
         // 총 투표량이 쿼럼을 넘는지 체크
-        require(
-            IModule(address(this)).getPowerToRate(p.totalVotes, p.blockNumber - 1) >= slot.voteQuorum,
-            "Council/Not Reached Quorum"
-        );
+        if (IModule(address(this)).getPowerToRate(p.totalVotes, p.blockNumber - 1) < slot.voteQuorum)
+            revert NotReachedQuorum();
+
         // yea > nay -> queued -> 거버넌스의 대기열에 등록
         // nay < yea -> leftout -> 거버넌스의 canceling
         (p.queued, p.leftout) = p.yea > p.nay
-            ? (IGovernance(p.governance).ready(proposalId), false)
+            ? (IGovernance(p.governance).approve(proposalId), false)
             : (false, IGovernance(p.governance).drop(proposalId));
         success = true;
         emit Resolved(proposalId);
@@ -225,6 +238,13 @@ contract Council is ICouncil, Initializer {
     }
 
     function toSecond(uint16 day) internal pure returns (uint32 second) {
-        second = day * 60;
+        unchecked {
+            second = 60 * 60 * 24 * day;
+        }
+    }
+
+    function setVoteModule(address voteModule, bytes calldata data) internal {
+        slot.voteModule = voteModule;
+        voteModule.delegatecall(data);
     }
 }

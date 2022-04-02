@@ -4,14 +4,14 @@
 
 pragma solidity ^0.8.0;
 
-import "@beandao/contracts/interfaces/IMint.sol";
-import "@beandao/contracts/interfaces/IBurn.sol";
-import "@beandao/contracts/interfaces/IERC165.sol";
-import {Initializer} from "@beandao/contracts/library/Initializer.sol";
-import {Ownership, IERC173} from "@beandao/contracts/library/Ownership.sol";
-import {ERC20, IERC20} from "@beandao/contracts/library/ERC20.sol";
-import {ERC2612, IERC2612} from "@beandao/contracts/library/ERC2612.sol";
-import {Multicall, IMulticall} from "@beandao/contracts/library/Multicall.sol";
+import "bean-contracts/contracts/interfaces/IMint.sol";
+import "bean-contracts/contracts/interfaces/IBurn.sol";
+import "bean-contracts/contracts/interfaces/IERC165.sol";
+import {Initializer} from "bean-contracts/contracts/library/Initializer.sol";
+import {Ownership, IERC173} from "bean-contracts/contracts/library/Ownership.sol";
+import {ERC20, IERC20} from "bean-contracts/contracts/library/ERC20.sol";
+import {ERC2612, IERC2612} from "bean-contracts/contracts/library/ERC2612.sol";
+import {Multicall, IMulticall} from "bean-contracts/contracts/library/Multicall.sol";
 
 contract StandardToken is ERC20, ERC2612, Ownership, Multicall, Initializer, IERC165, IBurn, IMint {
     constructor(

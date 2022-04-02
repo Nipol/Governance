@@ -3,13 +3,17 @@
  */
 pragma solidity ^0.8.0;
 
-import "@beandao/contracts/interfaces/IERC165.sol";
-
 /**
  * @title IModule
  * @notice Council에 부착 가능한 투표권 Module 인터페이스 집합
  */
-interface IModule is IERC165 {
+interface IModule {
+    /**
+     * @notice 해당 모듈을 초기화하기 위한 함수 호출
+     * @param data abi encode된 데이터가 주입되어 각 모듈에 맞게 해석합니다.
+     */
+    function initialize(bytes calldata data) external;
+
     /**
      * @notice BlockNumber를 기준으로, target의 정량적인 투표권을 가져옵니다.
      * @param target 대상이 되는 주소

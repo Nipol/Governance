@@ -3,7 +3,8 @@
  */
 pragma solidity ^0.8.0;
 
-import {ICouncil, IERC165} from "../ICouncil.sol";
+import "bean-contracts/contracts/interfaces/IERC165.sol";
+import "../ICouncil.sol";
 
 /**
  * @title CouncilMock
@@ -16,6 +17,7 @@ contract CouncilMock is ICouncil {
 
     function initialize(
         address voteModuleAddr,
+        bytes calldata voteModuleData,
         uint16 proposalQuorum,
         uint16 voteQuorum,
         uint16 emergencyQuorum,

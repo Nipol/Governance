@@ -3,7 +3,8 @@
  */
 pragma solidity ^0.8.0;
 
-import "@beandao/contracts/interfaces/IERC20.sol";
+import "bean-contracts/contracts/interfaces/IERC20.sol";
+import "bean-contracts/contracts/interfaces/IERC165.sol";
 import "./IModule.sol";
 
 library StakeStorage {
@@ -15,10 +16,11 @@ library StakeStorage {
     }
 
     struct Storage {
+        address voteToken;
         uint256 totalSupply;
         mapping(address => mapping(uint32 => Checkpoint)) checkpoints;
         mapping(address => uint32) numCheckpoints;
-        // mapping(address => uint256) balanceOf;
+        mapping(address => uint256) balanceOf;
     }
 
     function stakeStorage() internal pure returns (Storage storage s) {
@@ -30,19 +32,24 @@ library StakeStorage {
 }
 
 contract StakeModule is IModule {
-    address public immutable voteToken;
-
-    constructor(address token) {
-        voteToken = token;
+    function initialize(bytes calldata data) external {
+        address token = abi.decode(data, (address));
+        StakeStorage.Storage storage s = StakeStorage.stakeStorage();
+        s.voteToken = token;
     }
 
     function stake(uint96 amount) external returns (bool success) {
         StakeStorage.Storage storage s = StakeStorage.stakeStorage();
-        require(IERC20(voteToken).transferFrom(msg.sender, address(this), amount));
 
+        safeTransferFrom(s.voteToken, msg.sender, address(this), amount);
+
+        // 현재 블록 숫자.
         uint32 blockNumber = uint32(block.number);
+        // 호출 주소의 latest checkpoint
         uint32 checkpoint = s.numCheckpoints[msg.sender];
+        // 투표 모둘의 latest checkpoint
         uint32 tcheckpoint = s.numCheckpoints[address(0)];
+
         unchecked {
             if (checkpoint > 0 && s.checkpoints[msg.sender][checkpoint - 1].fromBlock == blockNumber) {
                 s.checkpoints[msg.sender][checkpoint - 1] = StakeStorage.Checkpoint({
@@ -54,7 +61,7 @@ contract StakeModule is IModule {
                     fromBlock: blockNumber,
                     power: amount
                 });
-                s.numCheckpoints[msg.sender]++;
+                ++s.numCheckpoints[msg.sender];
             }
 
             s.totalSupply += amount;
@@ -66,7 +73,7 @@ contract StakeModule is IModule {
                     fromBlock: blockNumber,
                     power: uint96(s.totalSupply)
                 });
-                s.numCheckpoints[address(0)]++;
+                ++s.numCheckpoints[address(0)];
             }
         }
         success = true;
@@ -78,15 +85,18 @@ contract StakeModule is IModule {
         uint32 blockNumber = uint32(block.number);
         uint32 checkpoint = s.numCheckpoints[msg.sender];
         uint32 tcheckpoint = s.numCheckpoints[address(0)];
+
         assert(checkpoint > 0);
+
         s.checkpoints[msg.sender][checkpoint] = StakeStorage.Checkpoint({
             fromBlock: blockNumber,
             power: s.checkpoints[msg.sender][checkpoint].power -= amount
         });
-        require(IERC20(voteToken).transfer(msg.sender, amount));
+
+        safeTransfer(s.voteToken, msg.sender, amount);
+
         unchecked {
             s.numCheckpoints[msg.sender]++;
-
             s.totalSupply -= amount;
             s.checkpoints[address(0)][tcheckpoint] = StakeStorage.Checkpoint({
                 fromBlock: blockNumber,
@@ -161,5 +171,89 @@ contract StakeModule is IModule {
             }
         }
         return s.checkpoints[target][lower].power;
+    }
+
+    function safeTransferFrom(
+        address tokenAddr,
+        address from,
+        address to,
+        uint256 amount
+    ) internal returns (bool success) {
+        // solhint-disable-next-line no-inline-assembly
+        assembly {
+            let freePointer := mload(0x40)
+            mstore(freePointer, 0x23b872dd00000000000000000000000000000000000000000000000000000000)
+            mstore(add(freePointer, 4), and(from, 0xffffffffffffffffffffffffffffffffffffffff))
+            mstore(add(freePointer, 36), and(to, 0xffffffffffffffffffffffffffffffffffffffff))
+            mstore(add(freePointer, 68), amount)
+
+            let callStatus := call(gas(), tokenAddr, 0, freePointer, 100, 0, 0)
+
+            let returnDataSize := returndatasize()
+            if iszero(callStatus) {
+                // Copy the revert message into memory.
+                returndatacopy(0, 0, returnDataSize)
+
+                // Revert with the same message.
+                revert(0, returnDataSize)
+            }
+            switch returnDataSize
+            case 32 {
+                // Copy the return data into memory.
+                returndatacopy(0, 0, returnDataSize)
+
+                // Set success to whether it returned true.
+                success := iszero(iszero(mload(0)))
+            }
+            case 0 {
+                // There was no return data.
+                success := 1
+            }
+            default {
+                // It returned some malformed input.
+                success := 0
+            }
+        }
+    }
+
+    function safeTransfer(
+        address tokenAddr,
+        address to,
+        uint256 amount
+    ) internal returns (bool success) {
+        // solhint-disable-next-line no-inline-assembly
+        assembly {
+            let freePointer := mload(0x40)
+            mstore(freePointer, 0xa9059cbb00000000000000000000000000000000000000000000000000000000)
+            mstore(add(freePointer, 4), and(to, 0xffffffffffffffffffffffffffffffffffffffff))
+            mstore(add(freePointer, 36), amount)
+
+            let callStatus := call(gas(), tokenAddr, 0, freePointer, 68, 0, 0)
+
+            let returnDataSize := returndatasize()
+            if iszero(callStatus) {
+                // Copy the revert message into memory.
+                returndatacopy(0, 0, returnDataSize)
+
+                // Revert with the same message.
+                revert(0, returnDataSize)
+            }
+            switch returnDataSize
+            case 32 {
+                // Copy the return data into memory.
+                returndatacopy(0, 0, returnDataSize)
+
+                // Set success to whether it returned true.
+                success := iszero(iszero(mload(0)))
+            }
+            case 0 {
+                // There was no return data.
+                success := 1
+            }
+            default {
+                // It returned some malformed input.
+                success := 0
+            }
+        }
     }
 }
