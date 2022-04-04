@@ -7,8 +7,6 @@ import "bean-contracts/contracts/library/Initializer.sol";
 import "bean-contracts/contracts/library/EIP712.sol";
 import "bean-contracts/contracts/library/Scheduler.sol";
 import "bean-contracts/contracts/library/Wizadry.sol";
-import "bean-contracts/contracts/interfaces/IERC165.sol";
-import "bean-contracts/contracts/interfaces/IERC721.sol";
 import "./IGovernance.sol";
 import "./ICouncil.sol";
 
@@ -38,7 +36,7 @@ error InvalidSignature_V();
  * @notice DAO의 지갑이자, 거버넌스 역할을 수행할 최종 인스턴스.
  * - 거버넌스는 카운슬의 실행 가능성에만 보팅에 대해 검증만 수행하기 때문에 거버넌스는 카운슬 구성원을 알수도 없음.
  */
-contract Governance is IGovernance, Wizadry, Scheduler, Initializer {
+contract Governance is Wizadry, Scheduler, Initializer, IGovernance {
     uint32 constant GRACE_PERIOD = 7 days;
     uint32 constant MINIMUM_DELAY = 1 days;
     uint32 constant MAXIMUM_DELAY = 30 days;
@@ -235,15 +233,6 @@ contract Governance is IGovernance, Wizadry, Scheduler, Initializer {
         }
     }
 
-    /** @notice Handle the receipt of an NFT
-     *  @dev The ERC721 smart contract calls this function on the recipient
-     *   after a `transfer`. This function MAY throw to revert and reject the
-     *   transfer. Return of other than the magic value MUST result in the
-     *   transaction being reverted.
-     *   Note: the contract address is always the message sender.
-     *  @return `bytes4(keccak256("onERC721Received(address,address,uint256,bytes)"))`
-     *   unless throwing
-     */
     function onERC721Received(
         address,
         address,
@@ -253,14 +242,6 @@ contract Governance is IGovernance, Wizadry, Scheduler, Initializer {
         return bytes4(keccak256("onERC721Received(address,address,uint256,bytes)"));
     }
 
-    /**
-     *  @notice Handle the receipt of a single ERC1155 token type.
-     *  @dev An ERC1155-compliant smart contract MUST call this function on the token recipient contract, at the end of a `safeTransferFrom` after the balance has been updated.
-     *  This function MUST return `bytes4(keccak256("onERC1155Received(address,address,uint256,uint256,bytes)"))` (i.e. 0xf23a6e61) if it accepts the transfer.
-     *  This function MUST revert if it rejects the transfer.
-     *  Return of any other value than the prescribed keccak256 generated value MUST result in the transaction being reverted by the caller.
-     *  @return           `bytes4(keccak256("onERC1155Received(address,address,uint256,uint256,bytes)"))`
-     */
     function onERC1155Received(
         address,
         address,
@@ -271,14 +252,6 @@ contract Governance is IGovernance, Wizadry, Scheduler, Initializer {
         return 0xf23a6e61;
     }
 
-    /**
-     *  @notice Handle the receipt of multiple ERC1155 token types.
-     *  @dev An ERC1155-compliant smart contract MUST call this function on the token recipient contract, at the end of a `safeBatchTransferFrom` after the balances have been updated.
-     *  This function MUST return `bytes4(keccak256("onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)"))` (i.e. 0xbc197c81) if it accepts the transfer(s).
-     *  This function MUST revert if it rejects the transfer(s).
-     *  Return of any other value than the prescribed keccak256 generated value MUST result in the transaction being reverted by the caller.
-     *  @return           `bytes4(keccak256("onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)"))`
-     */
     function onERC1155BatchReceived(
         address,
         address,
@@ -295,5 +268,9 @@ contract Governance is IGovernance, Wizadry, Scheduler, Initializer {
         bytes32 magichash
     ) internal view returns (bytes32) {
         return keccak256(abi.encodePacked(address(this), version, id, council, proposer, magichash));
+    }
+
+    function supportsInterface(bytes4 interfaceID) external view returns (bool) {
+        return interfaceID == type(IERC165).interfaceId || interfaceID == type(IERC721TokenReceiver).interfaceId;
     }
 }

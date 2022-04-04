@@ -3,13 +3,15 @@
  */
 pragma solidity ^0.8.0;
 
+import "bean-contracts/contracts/interfaces/IERC165.sol";
 import "bean-contracts/contracts/interfaces/IERC721TokenReceiver.sol";
+import "bean-contracts/contracts/interfaces/IERC1155TokenReceiver.sol";
 import "bean-contracts/contracts/interfaces/IERC1271.sol";
 
 /**
  * @title IGovernance
  */
-interface IGovernance is IERC1271, IERC721TokenReceiver {
+interface IGovernance is IERC165, IERC1271, IERC721TokenReceiver, IERC1155TokenReceiver {
     enum ProposalState {
         UNKNOWN,
         AWAIT,

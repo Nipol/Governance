@@ -18,13 +18,8 @@ contract StandardToken is ERC20, ERC2612, Ownership, Multicall, Initializer, IER
         string memory _name,
         string memory _symbol,
         uint8 _decimals
-    ) initializer {
-        version = "1";
-        name = _name;
-        symbol = _symbol;
-        decimals = _decimals;
+    ) ERC20(_name, _symbol, _decimals) ERC2612(_name, "1") initializer {
         balanceOf[address(this)] = type(uint256).max;
-        _initDomainSeparator(_name, version);
         _transferOwnership(msg.sender);
     }
 
