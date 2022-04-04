@@ -3,23 +3,23 @@
  */
 pragma solidity ^0.8.0;
 
-import "bean-contracts/contracts/library/Initializer.sol";
-import "bean-contracts/contracts/interfaces/IERC165.sol";
+import "@beandao/contracts/library/Initializer.sol";
+import "@beandao/contracts/interfaces/IERC165.sol";
 import "./VoteModule/IModule.sol";
 import "./IGovernance.sol";
 import "./ICouncil.sol";
 
-error NotReachedDelay();
+error Council__NotReachedDelay();
 
-error NotReachedQuorum();
+error Council__NotReachedQuorum();
 
-error NotResolvable(bytes32 proposalId);
+error Council__NotResolvable(bytes32 proposalId);
 
-error AlreadyProposed(bytes32 proposalId);
+error Council__AlreadyProposed(bytes32 proposalId);
 
-error NotActiveProposal(bytes32 proposalId);
+error Council__NotActiveProposal(bytes32 proposalId);
 
-error AlreadyVoted(bytes32 proposalId, bool vote);
+error Council__AlreadyVoted(bytes32 proposalId, bool vote);
 
 /**
  * @title Council
@@ -110,7 +110,7 @@ contract Council is IERC165, ICouncil, Initializer {
         Slot memory s = slot;
         // 한 블럭 이전 or 지난 epoch에, msg.sender의 보팅 권한이 최소 쿼럼을 만족하는지 체크
         if (IModule(address(this)).getPriorRate(msg.sender, block.number - 1) < s.proposalQuorum)
-            revert NotReachedQuorum();
+            revert Council__NotReachedQuorum();
 
         // 투표 시작 지연 추가
         uint32 start = uint32(block.timestamp) + toSecond(s.voteStartDelay);
@@ -126,7 +126,7 @@ contract Council is IERC165, ICouncil, Initializer {
         // 반횐된 uid에 대해 council 버전의 proposal 저장.
         (ProposalState state, Proposal storage p) = getProposalState(proposalId);
         // 한번도 사용되지 않은 유니크 아이디인지 확인
-        if (state != ProposalState.UNKNOWN) revert AlreadyProposed(proposalId);
+        if (state != ProposalState.UNKNOWN) revert Council__AlreadyProposed(proposalId);
 
         (p.governance, p.startTime, p.endTime, p.timestamp, p.blockNumber, p.spells, p.elements) = (
             governance,
@@ -163,7 +163,7 @@ contract Council is IERC165, ICouncil, Initializer {
     function vote(bytes32 proposalId, bool support) external {
         (ProposalState state, Proposal storage p) = getProposalState(proposalId);
         // 존재하는 Proposal인지 & 활성 상태인지 확인
-        if (state != ProposalState.ACTIVE) revert NotActiveProposal(proposalId);
+        if (state != ProposalState.ACTIVE) revert Council__NotActiveProposal(proposalId);
         // 기록된 블록의 - 1 기준으로 투표권 확인
         uint256 power = IModule(address(this)).getPriorPower(msg.sender, p.blockNumber - 1);
         // 제안서의 현재 투표 상태
@@ -177,8 +177,8 @@ contract Council is IERC165, ICouncil, Initializer {
             p.totalVotes += uint96(power);
         } else {
             // 투표 변경 딜레이 확인
-            if ((v.ts + toSecond(slot.voteChangableDelay)) > uint32(block.timestamp)) revert NotReachedDelay();
-            if (!support ? p.nay > 0 : p.yea > 0) revert AlreadyVoted(proposalId, support);
+            if ((v.ts + toSecond(slot.voteChangableDelay)) > uint32(block.timestamp)) revert Council__NotReachedDelay();
+            if (!support ? p.nay > 0 : p.yea > 0) revert Council__AlreadyVoted(proposalId, support);
             // 새로운 타임스탬프 기록
             v.ts = uint32(block.timestamp);
             // 이전 투표 파워 삭제
@@ -200,10 +200,10 @@ contract Council is IERC165, ICouncil, Initializer {
      */
     function resolve(bytes32 proposalId) external returns (bool success) {
         (ProposalState state, Proposal storage p) = getProposalState(proposalId);
-        if (state != ProposalState.STANDBY) revert NotResolvable(proposalId);
+        if (state != ProposalState.STANDBY) revert Council__NotResolvable(proposalId);
         // 총 투표량이 쿼럼을 넘는지 체크
         if (IModule(address(this)).getPowerToRate(p.totalVotes, p.blockNumber - 1) < slot.voteQuorum)
-            revert NotReachedQuorum();
+            revert Council__NotReachedQuorum();
 
         // yea > nay -> queued -> 거버넌스의 대기열에 등록
         // nay < yea -> leftout -> 거버넌스의 canceling

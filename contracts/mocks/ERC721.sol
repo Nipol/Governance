@@ -4,7 +4,7 @@
 
 pragma solidity ^0.8.0;
 
-import {ERC721, IERC721} from "bean-contracts/contracts/library/ERC721.sol";
+import {ERC721, IERC721} from "@beandao/contracts/library/ERC721.sol";
 
 contract ERC721Mock is ERC721 {
     constructor(string memory nftName, string memory nftSymbol) {

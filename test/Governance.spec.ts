@@ -45,18 +45,18 @@ const computeMagicHash = (spells: Uint8Array[] | string[], elements: string[]): 
 };
 
 enum GovernanceErrors {
-  NOT_FROM_COUNCIL = 'NotFromCouncil',
-  NOT_FROM_GOVERNANCE = 'NotFromGovernance',
-  NOT_PROPOSED = 'NotProposed',
-  NOT_COUNCIL_CONTRACT = 'NotCouncilContract',
-  SCHEDULER_NOT_QUEUED = 'Scheduler_NotQueued',
-  SCHEDULER_DELAY_IS_NOT_RANGE = 'Scheduler_DelayIsNotRange',
-  INVALID_ADDRESS = 'InvalidAddress',
-  INVALID_PROPOSAL = 'InvalidProposal',
-  INVALID_MAGICHASH = 'InvalidMagicHash',
-  INVALID_SIGNATURE = 'InvalidSignature',
-  INVALID_SIGNATURE_S = 'InvalidSignature_S',
-  INVALID_SIGNATURE_V = 'InvalidSignature_V',
+  NOT_FROM_COUNCIL = 'Governance__NotFromCouncil',
+  NOT_FROM_GOVERNANCE = 'Governance__NotFromGovernance',
+  NOT_PROPOSED = 'Governance__NotProposed',
+  NOT_COUNCIL_CONTRACT = 'Governance__NotCouncilContract',
+  SCHEDULER_NOT_QUEUED = 'Scheduler__NotQueued',
+  SCHEDULER_DELAY_IS_NOT_RANGE = 'Scheduler__DelayIsNotRange',
+  INVALID_ADDRESS = 'Governance__InvalidAddress',
+  INVALID_PROPOSAL = 'Governance__InvalidProposal',
+  INVALID_MAGICHASH = 'Governance__InvalidMagicHash',
+  INVALID_SIGNATURE = 'Governance__InvalidSignature',
+  INVALID_SIGNATURE_S = 'Governance__InvalidSignature_S',
+  INVALID_SIGNATURE_V = 'Governance__InvalidSignature_V',
 }
 
 describe('Governance', () => {
@@ -929,7 +929,7 @@ describe('Governance', () => {
         hash,
       );
 
-      const sig = `${splited.r}${splited.s.slice(2)}`;
+      const sig = `${splited.r}${splited.s.slice(4)}`;
       await expect(Governance.isValidSignature(hash, sig)).revertedWith(GovernanceErrors.INVALID_SIGNATURE);
     });
   });

@@ -3,10 +3,10 @@
  */
 pragma solidity ^0.8.0;
 
-import "bean-contracts/contracts/interfaces/IERC165.sol";
-import "bean-contracts/contracts/interfaces/IERC721TokenReceiver.sol";
-import "bean-contracts/contracts/interfaces/IERC1155TokenReceiver.sol";
-import "bean-contracts/contracts/interfaces/IERC1271.sol";
+import "@beandao/contracts/interfaces/IERC165.sol";
+import "@beandao/contracts/interfaces/IERC721TokenReceiver.sol";
+import "@beandao/contracts/interfaces/IERC1155TokenReceiver.sol";
+import "@beandao/contracts/interfaces/IERC1271.sol";
 
 /**
  * @title IGovernance

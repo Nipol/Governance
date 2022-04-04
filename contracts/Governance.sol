@@ -3,32 +3,32 @@
  */
 pragma solidity ^0.8.0;
 
-import "bean-contracts/contracts/library/Initializer.sol";
-import "bean-contracts/contracts/library/EIP712.sol";
-import "bean-contracts/contracts/library/Scheduler.sol";
-import "bean-contracts/contracts/library/Wizadry.sol";
+import "@beandao/contracts/library/Initializer.sol";
+import "@beandao/contracts/library/EIP712.sol";
+import "@beandao/contracts/library/Scheduler.sol";
+import "@beandao/contracts/library/Wizadry.sol";
 import "./IGovernance.sol";
 import "./ICouncil.sol";
 
-error NotFromCouncil(address caller);
+error Governance__NotFromCouncil(address caller);
 
-error NotFromGovernance(address caller);
+error Governance__NotFromGovernance(address caller);
 
-error InvalidMagicHash(bytes32 invalid);
+error Governance__InvalidMagicHash(bytes32 invalid);
 
-error InvalidProposal(bytes32 invalid);
+error Governance__InvalidProposal(bytes32 invalid);
 
-error InvalidAddress(address invalid);
+error Governance__InvalidAddress(address invalid);
 
-error NotProposed(bytes32 proposalId);
+error Governance__NotProposed(bytes32 proposalId);
 
-error NotCouncilContract(address contractAddr);
+error Governance__NotCouncilContract(address contractAddr);
 
-error InvalidSignature();
+error Governance__InvalidSignature();
 
-error InvalidSignature_S();
+error Governance__InvalidSignature_S();
 
-error InvalidSignature_V();
+error Governance__InvalidSignature_V();
 
 /**
  * @title Governance
@@ -66,7 +66,7 @@ contract Governance is Wizadry, Scheduler, Initializer, IGovernance {
      * @notice 자기 자신 Governance 컨트랙트만 호출이 가능함.
      */
     modifier onlyGov() {
-        if (msg.sender != address(this)) revert NotFromGovernance(msg.sender);
+        if (msg.sender != address(this)) revert Governance__NotFromGovernance(msg.sender);
         _;
     }
 
@@ -74,7 +74,7 @@ contract Governance is Wizadry, Scheduler, Initializer, IGovernance {
      * @notice 해당 호출은 이사회 컨트랙트만 가능함.
      */
     modifier onlyCouncil() {
-        if (msg.sender != council) revert NotFromCouncil(msg.sender);
+        if (msg.sender != council) revert Governance__NotFromCouncil(msg.sender);
         _;
     }
 
@@ -116,7 +116,7 @@ contract Governance is Wizadry, Scheduler, Initializer, IGovernance {
      * @return success 해당 실행이 성공적인지 여부
      */
     function approve(bytes32 proposalId) external onlyCouncil returns (bool success) {
-        if (proposals[proposalId].id == 0) revert NotProposed(proposalId);
+        if (proposals[proposalId].id == 0) revert Governance__NotProposed(proposalId);
         queue(proposalId);
         success = true;
         emit Approved(proposalId);
@@ -129,7 +129,7 @@ contract Governance is Wizadry, Scheduler, Initializer, IGovernance {
      */
     function drop(bytes32 proposalId) external onlyCouncil returns (bool success) {
         Proposal storage p = proposals[proposalId];
-        if (p.id == 0) revert NotProposed(proposalId);
+        if (p.id == 0) revert Governance__NotProposed(proposalId);
         p.canceled = true;
         success = true;
         emit Dropped(proposalId);
@@ -152,11 +152,11 @@ contract Governance is Wizadry, Scheduler, Initializer, IGovernance {
         bytes32 _magichash = keccak256(
             abi.encode(keccak256(abi.encodePacked(spells)), keccak256(abi.encode(elements)))
         );
-        if (p.magichash != _magichash) revert InvalidMagicHash(_magichash);
+        if (p.magichash != _magichash) revert Governance__InvalidMagicHash(_magichash);
 
         // 해당 호출이 해당 프로포절과 부합하는지 검사
         bytes32 _proposalId = computeProposalId(p.id, p.proposer, p.magichash);
-        if (proposalId != _proposalId) revert InvalidProposal(_proposalId);
+        if (proposalId != _proposalId) revert Governance__InvalidProposal(_proposalId);
 
         if (taskOf[proposalId].state == STATE.RESOLVED) {
             cast(spells, elements);
@@ -171,7 +171,7 @@ contract Governance is Wizadry, Scheduler, Initializer, IGovernance {
      * @notice 연결된 카운슬을 다른 카운슬 컨트랙트로 변경한다. 이때 일반적인 EOA로는 이관할 수 없다.
      */
     function changeCouncil(address councilAddr) external onlyGov {
-        if (!IERC165(councilAddr).supportsInterface(type(ICouncil).interfaceId)) revert NotCouncilContract(councilAddr);
+        if (!IERC165(councilAddr).supportsInterface(type(ICouncil).interfaceId)) revert Governance__NotCouncilContract(councilAddr);
         council = councilAddr;
     }
 
@@ -196,7 +196,7 @@ contract Governance is Wizadry, Scheduler, Initializer, IGovernance {
      * @notice 현재 연결되어 있는 카운슬을 다른 주소로 변경하며, 이때 어떤 주소로든 이관할 수 있다.
      */
     function emergencyCouncil(address councilAddr) external onlyGov {
-        if (council == councilAddr || councilAddr == address(this)) revert InvalidAddress(councilAddr);
+        if (council == councilAddr || councilAddr == address(this)) revert Governance__InvalidAddress(councilAddr);
         council = councilAddr;
     }
 
@@ -204,30 +204,44 @@ contract Governance is Wizadry, Scheduler, Initializer, IGovernance {
      * @notice Council이 EOA로 등록된 경우, EOA가 Governance를 대신하여 Off-chain 투표를 수행하도록 합니다.
      */
     function isValidSignature(bytes32 digest, bytes memory signature) external view returns (bytes4 magicValue) {
-        if (signature.length != 65) revert InvalidSignature();
         uint8 v;
         bytes32 r;
         bytes32 s;
-        // solhint-disable-next-line no-inline-assembly
-        assembly {
-            v := and(mload(add(signature, 65)), 255)
-            r := mload(add(signature, 32))
-            s := mload(add(signature, 64))
+
+        if (signature.length == 65) {
+            // solhint-disable-next-line no-inline-assembly
+            assembly {
+                r := mload(add(signature, 32))
+                s := mload(add(signature, 64))
+                v := byte(0, mload(add(signature, 96)))
+            }
+        } else if (signature.length == 64) {
+            bytes32 vs;
+            // solhint-disable-next-line no-inline-assembly
+            assembly {
+                r := mload(add(signature, 32))
+                vs := mload(add(signature, 64))
+                s := and(vs, 0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)
+            }
+            unchecked {
+                v = 27 + uint8(uint256(vs) >> 255);
+            }
+        } else {
+            revert Governance__InvalidSignature();
         }
 
         if (uint256(s) > 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0) {
-            revert InvalidSignature_S();
+            revert Governance__InvalidSignature_S();
         }
 
         if (v != 27 && v != 28) {
-            revert InvalidSignature_V();
+            revert Governance__InvalidSignature_V();
         }
 
         address signer = ecrecover(digest, v, r, s);
 
         if (council == signer && signer != address(0)) {
-            // bytes4(keccak256("isValidSignature(bytes32,bytes)"))
-            magicValue = 0x1626ba7e;
+            magicValue = 0x1626ba7e; // bytes4(keccak256("isValidSignature(bytes32,bytes)"))
         } else {
             magicValue = 0xffffffff;
         }
@@ -239,7 +253,7 @@ contract Governance is Wizadry, Scheduler, Initializer, IGovernance {
         uint256,
         bytes memory
     ) external pure returns (bytes4) {
-        return bytes4(keccak256("onERC721Received(address,address,uint256,bytes)"));
+        return 0x150b7a02;
     }
 
     function onERC1155Received(

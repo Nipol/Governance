@@ -3,7 +3,7 @@
  */
 pragma solidity ^0.8.0;
 
-import "bean-contracts/contracts/library/MinimalProxy.sol";
+import "@beandao/contracts/library/MinimalProxy.sol";
 
 contract Deployer {
     address tmp;

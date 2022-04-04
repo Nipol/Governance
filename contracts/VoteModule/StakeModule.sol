@@ -3,8 +3,8 @@
  */
 pragma solidity ^0.8.0;
 
-import "bean-contracts/contracts/interfaces/IERC20.sol";
-import "bean-contracts/contracts/interfaces/IERC165.sol";
+import "@beandao/contracts/interfaces/IERC20.sol";
+import "@beandao/contracts/interfaces/IERC165.sol";
 import "./IModule.sol";
 
 library StakeStorage {

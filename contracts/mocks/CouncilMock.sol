@@ -3,7 +3,7 @@
  */
 pragma solidity ^0.8.0;
 
-import "bean-contracts/contracts/interfaces/IERC165.sol";
+import "@beandao/contracts/interfaces/IERC165.sol";
 import "../ICouncil.sol";
 
 /**

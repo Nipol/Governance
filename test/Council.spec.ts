@@ -14,12 +14,12 @@ export async function latestBlocknumber(): Promise<number> {
 // ethers.utils.Logger.setLogLevel(ethers.utils.Logger.levels.ERROR);
 
 enum CouncilErros {
-  NOT_REACHED_DELAY = 'NotReachedDelay',
-  NOT_REACHED_QUORUM = 'NotReachedQuorum',
-  NOT_RESOLVABLE = 'NotResolvable',
-  NOT_ACTIVE_PROPOSAL = 'NotActiveProposal',
-  ALREADY_PROPOSED = 'AlreadyProposed',
-  ALREADY_VOTED = 'AlreadyVoted',
+  NOT_REACHED_DELAY = 'Council__NotReachedDelay',
+  NOT_REACHED_QUORUM = 'Council__NotReachedQuorum',
+  NOT_RESOLVABLE = 'Council__NotResolvable',
+  NOT_ACTIVE_PROPOSAL = 'Council__NotActiveProposal',
+  ALREADY_PROPOSED = 'Council__AlreadyProposed',
+  ALREADY_VOTED = 'Council__AlreadyVoted',
 }
 
 describe('Council', () => {
