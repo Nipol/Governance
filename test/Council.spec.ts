@@ -49,11 +49,22 @@ describe('Council', () => {
     GovernanceMock = await (
       await ethers.getContractFactory('contracts/mocks/GovernanceMock.sol:GovernanceMock', wallet)
     ).deploy();
-    Council = await (await ethers.getContractFactory('contracts/Council.sol:Council', wallet)).deploy();
-    const StakeModuleDeployer = await ethers.getContractFactory(
-      'contracts/VoteModule/StakeModule.sol:StakeModule',
-      wallet,
-    );
+
+    const CouncilDeployer = await ethers.getContractFactory('contracts/Council.sol:Council', wallet);
+    Council = await CouncilDeployer.deploy();
+
+    const deployer = await (
+      await ethers.getContractFactory('contracts/mocks/Deployer.sol:Deployer', wallet)
+    ).deploy(Council.address);
+
+    const councilAddr = await deployer.calculate();
+    await deployer.deployIncrement();
+
+    Council = CouncilDeployer.attach(councilAddr);
+    StakeModule = await (
+      await ethers.getContractFactory('contracts/VoteModule/StakeModule.sol:StakeModule', wallet)
+    ).deploy();
+
     Token = await (
       await ethers.getContractFactory('contracts/mocks/ERC20.sol:StandardToken', wallet)
     ).deploy('bean', 'bean', 18);
@@ -61,10 +72,8 @@ describe('Council', () => {
     await Token.mintTo(ToAddress, BigNumber.from('100000000000000000000')); // 100개 생성
 
     VoteModuleInitializer = interfaces.encodeFunctionData('initialize', [Token.address]);
-
-    StakeModule = await StakeModuleDeployer.deploy();
     // 초기화 시작
-    const day = BigNumber.from('60').mul('60').mul('24');
+    // const day = BigNumber.from('60').mul('60').mul('24');
   });
 
   describe('#initialize()', () => {

@@ -78,7 +78,19 @@ describe('Governance', () => {
     WalletAddress = await wallet.getAddress();
     ToAddress = await To.getAddress();
 
-    Governance = await (await ethers.getContractFactory('contracts/Governance.sol:Governance', wallet)).deploy();
+    const govFactory = await ethers.getContractFactory('contracts/Governance.sol:Governance', wallet);
+
+    Governance = await govFactory.deploy();
+
+    const deployer = await (
+      await ethers.getContractFactory('contracts/mocks/Deployer.sol:Deployer', wallet)
+    ).deploy(Governance.address);
+
+    const councilAddr = await deployer.calculate();
+    await deployer.deployIncrement();
+
+    Governance = govFactory.attach(councilAddr);
+
     Token = await (
       await ethers.getContractFactory('contracts/mocks/ERC20.sol:StandardToken', wallet)
     ).deploy('bean', 'bean', 18);
