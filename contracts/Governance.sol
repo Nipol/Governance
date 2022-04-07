@@ -10,13 +10,11 @@ import "@beandao/contracts/library/Wizadry.sol";
 import "./IGovernance.sol";
 import "./ICouncil.sol";
 
-error Governance__NotFromCouncil(address caller);
+error Governance__FromNotCouncil(address caller);
 
-error Governance__NotFromGovernance(address caller);
+error Governance__FromNotGovernance(address caller);
 
-error Governance__InvalidMagicHash(bytes32 invalid);
-
-error Governance__InvalidProposal(bytes32 invalid);
+error Governance__InvalidExecuteData(bytes16 invalid);
 
 error Governance__InvalidAddress(address invalid);
 
@@ -55,7 +53,7 @@ contract Governance is Wizadry, Scheduler, Initializer, IGovernance {
     /**
      * @notice 고유한 Proposal 아이디 생성을 위한 내부 순서
      */
-    uint128 public nonce;
+    uint96 public nonce;
 
     /**
      * @notice keccak256(contract address ++ contract versrion ++ proposer address ++ nonce) to proposal
@@ -66,7 +64,7 @@ contract Governance is Wizadry, Scheduler, Initializer, IGovernance {
      * @notice 자기 자신 Governance 컨트랙트만 호출이 가능함.
      */
     modifier onlyGov() {
-        if (msg.sender != address(this)) revert Governance__NotFromGovernance(msg.sender);
+        if (msg.sender != address(this)) revert Governance__FromNotGovernance(msg.sender);
         _;
     }
 
@@ -74,7 +72,7 @@ contract Governance is Wizadry, Scheduler, Initializer, IGovernance {
      * @notice 해당 호출은 이사회 컨트랙트만 가능함.
      */
     modifier onlyCouncil() {
-        if (msg.sender != council) revert Governance__NotFromCouncil(msg.sender);
+        if (msg.sender != council) revert Governance__FromNotCouncil(msg.sender);
         _;
     }
 
@@ -102,21 +100,22 @@ contract Governance is Wizadry, Scheduler, Initializer, IGovernance {
      * @return proposalId 해당 제안의 고유값
      * @return id 해당 제안의 순서 값
      */
-    function propose(ProposalParams calldata params) external onlyCouncil returns (bytes32 proposalId, uint128 id) {
+    function propose(ProposalParams calldata params) external onlyCouncil returns (bytes32 proposalId, uint96 id) {
         id = ++nonce;
         proposalId = computeProposalId(id, params.proposer, params.magichash);
         Proposal storage p = proposals[proposalId];
-        (p.id, p.proposer, p.magichash) = (id, params.proposer, params.magichash);
+        (p.id, p.magichash, p.state) = (id, params.magichash, ProposalState.AWAIT);
         emit Proposed(proposalId, version, id, msg.sender, params.proposer, params.magichash);
     }
 
     /**
      * @notice 등록된 제안을 실행 대기열에 등록하며, Council에서 Proposal이 승인 되었을 때 실행
      * @param proposalId Proposal에 대한 고유 아이디
-     * @return success 해당 실행이 성공적인지 여부
      */
     function approve(bytes32 proposalId) external onlyCouncil returns (bool success) {
-        if (proposals[proposalId].id == 0) revert Governance__NotProposed(proposalId);
+        Proposal storage p = proposals[proposalId];
+        if (p.state != ProposalState.AWAIT) revert Governance__NotProposed(proposalId);
+        p.state = ProposalState.APPROVED;
         queue(proposalId);
         success = true;
         emit Approved(proposalId);
@@ -125,12 +124,11 @@ contract Governance is Wizadry, Scheduler, Initializer, IGovernance {
     /**
      * @notice 등록한 제안을 대기열에서 삭제시키며, Council에서 Proposal이 승인되지 않았을 때 실행
      * @param proposalId Proposal에 대한 고유 아이디
-     * @return success 해당 실행이 성공적인지 여부
      */
     function drop(bytes32 proposalId) external onlyCouncil returns (bool success) {
         Proposal storage p = proposals[proposalId];
-        if (p.id == 0) revert Governance__NotProposed(proposalId);
-        p.canceled = true;
+        if (p.state != ProposalState.AWAIT) revert Governance__NotProposed(proposalId);
+        p.state = ProposalState.DROPPED;
         success = true;
         emit Dropped(proposalId);
     }
@@ -149,21 +147,18 @@ contract Governance is Wizadry, Scheduler, Initializer, IGovernance {
         Proposal memory p = proposals[proposalId];
 
         // spells과 elements 체크섬
-        bytes32 _magichash = keccak256(
-            abi.encode(keccak256(abi.encodePacked(spells)), keccak256(abi.encode(elements)))
+        bytes16 _magichash = bytes16(
+            keccak256(abi.encode(keccak256(abi.encodePacked(spells)), keccak256(abi.encode(elements))))
         );
-        if (p.magichash != _magichash) revert Governance__InvalidMagicHash(_magichash);
-
-        // 해당 호출이 해당 프로포절과 부합하는지 검사
-        bytes32 _proposalId = computeProposalId(p.id, p.proposer, p.magichash);
-        if (proposalId != _proposalId) revert Governance__InvalidProposal(_proposalId);
+        if (p.magichash != _magichash) revert Governance__InvalidExecuteData(_magichash);
 
         if (taskOf[proposalId].state == STATE.RESOLVED) {
             cast(spells, elements);
-            proposals[proposalId].executed = true;
+            proposals[proposalId].state = ProposalState.EXECUTED;
         } else {
-            proposals[proposalId].canceled = true;
+            proposals[proposalId].state = ProposalState.DROPPED;
         }
+
         emit Executed(proposalId);
     }
 
@@ -171,7 +166,8 @@ contract Governance is Wizadry, Scheduler, Initializer, IGovernance {
      * @notice 연결된 카운슬을 다른 카운슬 컨트랙트로 변경한다. 이때 일반적인 EOA로는 이관할 수 없다.
      */
     function changeCouncil(address councilAddr) external onlyGov {
-        if (!IERC165(councilAddr).supportsInterface(type(ICouncil).interfaceId)) revert Governance__NotCouncilContract(councilAddr);
+        if (!IERC165(councilAddr).supportsInterface(type(ICouncil).interfaceId))
+            revert Governance__NotCouncilContract(councilAddr);
         council = councilAddr;
     }
 
@@ -253,7 +249,7 @@ contract Governance is Wizadry, Scheduler, Initializer, IGovernance {
         uint256,
         bytes memory
     ) external pure returns (bytes4) {
-        return 0x150b7a02;
+        return IERC721TokenReceiver.onERC721Received.selector;
     }
 
     function onERC1155Received(
@@ -263,7 +259,7 @@ contract Governance is Wizadry, Scheduler, Initializer, IGovernance {
         uint256,
         bytes calldata
     ) external pure returns (bytes4) {
-        return 0xf23a6e61;
+        return IERC1155TokenReceiver.onERC1155Received.selector;
     }
 
     function onERC1155BatchReceived(
@@ -273,18 +269,21 @@ contract Governance is Wizadry, Scheduler, Initializer, IGovernance {
         uint256[] calldata,
         bytes calldata
     ) external pure returns (bytes4) {
-        return 0xbc197c81;
+        return IERC1155TokenReceiver.onERC1155BatchReceived.selector;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return
+            interfaceId == type(IERC165).interfaceId ||
+            interfaceId == type(IERC721TokenReceiver).interfaceId ||
+            interfaceId == type(IERC1155TokenReceiver).interfaceId;
     }
 
     function computeProposalId(
-        uint128 id,
+        uint96 id,
         address proposer,
-        bytes32 magichash
+        bytes16 magichash
     ) internal view returns (bytes32) {
-        return keccak256(abi.encodePacked(address(this), version, id, council, proposer, magichash));
-    }
-
-    function supportsInterface(bytes4 interfaceID) external view returns (bool) {
-        return interfaceID == type(IERC165).interfaceId || interfaceID == type(IERC721TokenReceiver).interfaceId;
+        return keccak256(abi.encodePacked(address(this), version, id, proposer, council, magichash));
     }
 }

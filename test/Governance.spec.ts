@@ -45,14 +45,13 @@ const computeMagicHash = (spells: Uint8Array[] | string[], elements: string[]): 
 };
 
 enum GovernanceErrors {
-  NOT_FROM_COUNCIL = 'Governance__NotFromCouncil',
-  NOT_FROM_GOVERNANCE = 'Governance__NotFromGovernance',
+  FROM_NOT_COUNCIL = 'Governance__FromNotCouncil',
+  FROM_NOT_GOVERNANCE = 'Governance__FromNotGovernance',
   NOT_PROPOSED = 'Governance__NotProposed',
   NOT_COUNCIL_CONTRACT = 'Governance__NotCouncilContract',
   SCHEDULER_NOT_QUEUED = 'Scheduler__NotQueued',
   SCHEDULER_DELAY_IS_NOT_RANGE = 'Scheduler__DelayIsNotRange',
   INVALID_ADDRESS = 'Governance__InvalidAddress',
-  INVALID_PROPOSAL = 'Governance__InvalidProposal',
   INVALID_MAGICHASH = 'Governance__InvalidMagicHash',
   INVALID_SIGNATURE = 'Governance__InvalidSignature',
   INVALID_SIGNATURE_S = 'Governance__InvalidSignature_S',
@@ -132,11 +131,13 @@ describe('Governance', () => {
           ['bytes32', 'bytes32'],
           [solidityKeccak256(['bytes32[]'], [[]]), keccak256(defaultAbiCoder.encode(['bytes[]'], [[]]))],
         ),
-      );
+      ).slice(0, 34);
+
       const expectedId = solidityKeccak256(
-        ['address', 'string', 'uint128', 'address', 'address', 'bytes32'],
+        ['address', 'string', 'uint96', 'address', 'address', 'bytes16'],
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
+
       const param = { proposer: WalletAddress, magichash };
       await expect(Governance.propose(param))
         .to.emit(Governance, 'Proposed')
@@ -146,8 +147,8 @@ describe('Governance', () => {
 
     it('should be revert call from not council', async () => {
       const getNonce = await Governance.nonce();
-      const param = { proposer: WalletAddress, magichash: constants.HashZero };
-      await expect(Governance.connect(To).propose(param)).revertedWith(GovernanceErrors.NOT_FROM_COUNCIL);
+      const param = { proposer: WalletAddress, magichash: constants.HashZero.slice(0, 34) };
+      await expect(Governance.connect(To).propose(param)).revertedWith(GovernanceErrors.FROM_NOT_COUNCIL);
       expect(await Governance.nonce()).equal(getNonce);
     });
   });
@@ -164,9 +165,9 @@ describe('Governance', () => {
           ['bytes32', 'bytes32'],
           [solidityKeccak256(['bytes32[]'], [[]]), keccak256(defaultAbiCoder.encode(['bytes[]'], [[]]))],
         ),
-      );
+      ).slice(0, 34);
       expectedId = solidityKeccak256(
-        ['address', 'string', 'uint128', 'address', 'address', 'bytes32'],
+        ['address', 'string', 'uint96', 'address', 'address', 'bytes16'],
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
       const param = { proposer: WalletAddress, magichash };
@@ -196,9 +197,9 @@ describe('Governance', () => {
           ['bytes32', 'bytes32'],
           [solidityKeccak256(['bytes32[]'], [[]]), keccak256(defaultAbiCoder.encode(['bytes[]'], [[]]))],
         ),
-      );
+      ).slice(0, 34);
       expectedId = solidityKeccak256(
-        ['address', 'string', 'uint128', 'address', 'address', 'bytes32'],
+        ['address', 'string', 'uint96', 'address', 'address', 'bytes16'],
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
       const param = { proposer: WalletAddress, magichash };
@@ -262,9 +263,9 @@ describe('Governance', () => {
 
       const version = await Governance.version();
       const nonce = (await Governance.nonce()).add(1);
-      magichash = computeMagicHash(spells, elements);
+      magichash = computeMagicHash(spells, elements).slice(0, 34);
       expectedId = solidityKeccak256(
-        ['address', 'string', 'uint128', 'address', 'address', 'bytes32'],
+        ['address', 'string', 'uint96', 'address', 'address', 'bytes16'],
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
       const param = { proposer: WalletAddress, magichash };
@@ -281,14 +282,7 @@ describe('Governance', () => {
         .to.emit(Token, 'Transfer')
         .withArgs(Governance.address, ToAddress, initialToken);
       expect(await Token.balanceOf(ToAddress)).to.equal(initialToken);
-      expect(await Governance.proposals(expectedId)).to.deep.equal([
-        BigNumber.from('0x01'),
-        WalletAddress,
-        magichash,
-        true,
-        false,
-        0,
-      ]);
+      expect(await Governance.proposals(expectedId)).to.deep.equal([BigNumber.from('0x01'), magichash, 4, 0]);
     });
 
     it('should be success after grace period', async () => {
@@ -297,14 +291,7 @@ describe('Governance', () => {
       await ethers.provider.send('evm_setNextBlockTimestamp', [nextLevel.toNumber()]);
       await expect(Governance.execute(expectedId, spells, elements)).to.emit(Governance, 'Staled').withArgs(expectedId);
       expect(await Token.balanceOf(Governance.address)).to.equal(initialToken);
-      expect(await Governance.proposals(expectedId)).to.deep.equal([
-        BigNumber.from('0x01'),
-        WalletAddress,
-        magichash,
-        false,
-        true,
-        0,
-      ]);
+      expect(await Governance.proposals(expectedId)).to.deep.equal([BigNumber.from('0x01'), magichash, 3, 0]);
     });
 
     it('should be revert with non exist Proposal Id', async () => {
@@ -361,12 +348,12 @@ describe('Governance', () => {
         '0x000000000000000000000000' + Council.address.slice(2), // for changeCouncil
       ];
 
-      const magichash = computeMagicHash(spells, elements);
+      const magichash = computeMagicHash(spells, elements).slice(0, 34);
 
       const version = await Governance.version();
       const nonce = (await Governance.nonce()).add(1);
       expectedId = solidityKeccak256(
-        ['address', 'string', 'uint128', 'address', 'address', 'bytes32'],
+        ['address', 'string', 'uint96', 'address', 'address', 'bytes16'],
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
       const param = { proposer: WalletAddress, magichash };
@@ -408,12 +395,12 @@ describe('Governance', () => {
         '0x000000000000000000000000' + Token.address.slice(2), // for changeCouncil
       ];
 
-      const magichash = computeMagicHash(spells, elements);
+      const magichash = computeMagicHash(spells, elements).slice(0, 34);
 
       const version = await Governance.version();
       const nonce = (await Governance.nonce()).add(1);
       expectedId = solidityKeccak256(
-        ['address', 'string', 'uint128', 'address', 'address', 'bytes32'],
+        ['address', 'string', 'uint96', 'address', 'address', 'bytes16'],
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
       const param = { proposer: WalletAddress, magichash };
@@ -453,12 +440,12 @@ describe('Governance', () => {
         '0x000000000000000000000000' + Token.address.slice(2), // for changeCouncil
       ];
 
-      const magichash = computeMagicHash(spells, elements);
+      const magichash = computeMagicHash(spells, elements).slice(0, 34);
 
       const version = await Governance.version();
       const nonce = (await Governance.nonce()).add(1);
       expectedId = solidityKeccak256(
-        ['address', 'string', 'uint128', 'address', 'address', 'bytes32'],
+        ['address', 'string', 'uint96', 'address', 'address', 'bytes16'],
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
 
@@ -471,11 +458,11 @@ describe('Governance', () => {
       await ethers.provider.send('evm_setNextBlockTimestamp', [nextLevel.toNumber()]);
 
       expect(await Governance.council()).to.equal(WalletAddress);
-      await expect(Governance.execute(expectedId, spells, elements)).revertedWith(GovernanceErrors.NOT_FROM_GOVERNANCE);
+      await expect(Governance.execute(expectedId, spells, elements)).revertedWith(GovernanceErrors.FROM_NOT_GOVERNANCE);
     });
 
     it('should be revert from non governance address', async () => {
-      await expect(Governance.changeCouncil(Token.address)).revertedWith(GovernanceErrors.NOT_FROM_GOVERNANCE);
+      await expect(Governance.changeCouncil(Token.address)).revertedWith(GovernanceErrors.FROM_NOT_GOVERNANCE);
     });
   });
 
@@ -509,12 +496,12 @@ describe('Governance', () => {
         hexZeroPad(hexlify(day.mul('2')), 32), // for changeCouncil
       ];
 
-      const magichash = computeMagicHash(spells, elements);
+      const magichash = computeMagicHash(spells, elements).slice(0, 34);
 
       const version = await Governance.version();
       const nonce = (await Governance.nonce()).add(1);
       expectedId = solidityKeccak256(
-        ['address', 'string', 'uint128', 'address', 'address', 'bytes32'],
+        ['address', 'string', 'uint96', 'address', 'address', 'bytes16'],
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
 
@@ -555,11 +542,11 @@ describe('Governance', () => {
       const elements = [
         hexZeroPad(hexlify(day.mul('31')), 32), // for changeCouncil
       ];
-      const magichash = computeMagicHash(spells, elements);
+      const magichash = computeMagicHash(spells, elements).slice(0, 34);
       const version = await Governance.version();
       const nonce = (await Governance.nonce()).add(1);
       expectedId = solidityKeccak256(
-        ['address', 'string', 'uint128', 'address', 'address', 'bytes32'],
+        ['address', 'string', 'uint96', 'address', 'address', 'bytes16'],
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
 
@@ -600,11 +587,11 @@ describe('Governance', () => {
         hexZeroPad(hexlify(day.mul('2')), 32), // for changeCouncil
       ];
 
-      const magichash = computeMagicHash(spells, elements);
+      const magichash = computeMagicHash(spells, elements).slice(0, 34);
       const version = await Governance.version();
       const nonce = (await Governance.nonce()).add(1);
       expectedId = solidityKeccak256(
-        ['address', 'string', 'uint128', 'address', 'address', 'bytes32'],
+        ['address', 'string', 'uint96', 'address', 'address', 'bytes16'],
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
 
@@ -617,11 +604,11 @@ describe('Governance', () => {
       await ethers.provider.send('evm_setNextBlockTimestamp', [nextLevel.toNumber()]);
 
       expect(await Governance.delay()).to.equal(day);
-      await expect(Governance.execute(expectedId, spells, elements)).revertedWith(GovernanceErrors.NOT_FROM_GOVERNANCE);
+      await expect(Governance.execute(expectedId, spells, elements)).revertedWith(GovernanceErrors.FROM_NOT_GOVERNANCE);
     });
 
     it('should be revert from non governance address', async () => {
-      await expect(Governance.changeDelay(day.mul('2'))).revertedWith(GovernanceErrors.NOT_FROM_GOVERNANCE);
+      await expect(Governance.changeDelay(day.mul('2'))).revertedWith(GovernanceErrors.FROM_NOT_GOVERNANCE);
     });
   });
 
@@ -677,7 +664,7 @@ describe('Governance', () => {
     });
 
     it('should be revert with from non council contract', async () => {
-      await expect(Governance.connect(To).emergencyExecute([], [])).revertedWith(GovernanceErrors.NOT_FROM_COUNCIL);
+      await expect(Governance.connect(To).emergencyExecute([], [])).revertedWith(GovernanceErrors.FROM_NOT_COUNCIL);
       expect(await Governance.nonce()).to.equal('0');
     });
   });
@@ -715,12 +702,12 @@ describe('Governance', () => {
         '0x000000000000000000000000' + ToAddress.slice(2), // transfer
       ];
 
-      const magichash = computeMagicHash(spells, elements);
+      const magichash = computeMagicHash(spells, elements).slice(0, 34);
 
       const version = await Governance.version();
       const nonce = (await Governance.nonce()).add(1);
       expectedId = solidityKeccak256(
-        ['address', 'string', 'uint128', 'address', 'address', 'bytes32'],
+        ['address', 'string', 'uint96', 'address', 'address', 'bytes16'],
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
 
@@ -763,11 +750,11 @@ describe('Governance', () => {
         '0x000000000000000000000000' + WalletAddress.slice(2), // transfer
       ];
 
-      const magichash = computeMagicHash(spells, elements);
+      const magichash = computeMagicHash(spells, elements).slice(0, 34);
       const version = await Governance.version();
       const nonce = (await Governance.nonce()).add(1);
       expectedId = solidityKeccak256(
-        ['address', 'string', 'uint128', 'address', 'address', 'bytes32'],
+        ['address', 'string', 'uint96', 'address', 'address', 'bytes16'],
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
 
@@ -810,12 +797,12 @@ describe('Governance', () => {
         '0x000000000000000000000000' + Governance.address.slice(2), // transfer
       ];
 
-      const magichash = computeMagicHash(spells, elements);
+      const magichash = computeMagicHash(spells, elements).slice(0, 34);
 
       const version = await Governance.version();
       const nonce = (await Governance.nonce()).add(1);
       expectedId = solidityKeccak256(
-        ['address', 'string', 'uint128', 'address', 'address', 'bytes32'],
+        ['address', 'string', 'uint96', 'address', 'address', 'bytes16'],
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
 
@@ -855,12 +842,12 @@ describe('Governance', () => {
         ]),
       ];
 
-      const magichash = computeMagicHash(spells, elements);
+      const magichash = computeMagicHash(spells, elements).slice(0, 34);
 
       const version = await Governance.version();
       const nonce = (await Governance.nonce()).add(1);
       expectedId = solidityKeccak256(
-        ['address', 'string', 'uint128', 'address', 'address', 'bytes32'],
+        ['address', 'string', 'uint96', 'address', 'address', 'bytes16'],
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
 
@@ -872,7 +859,7 @@ describe('Governance', () => {
       const nextLevel = day.add(now).add('1');
       await ethers.provider.send('evm_setNextBlockTimestamp', [nextLevel.toNumber()]);
 
-      await expect(Governance.execute(expectedId, spells, elements)).revertedWith(GovernanceErrors.NOT_FROM_GOVERNANCE);
+      await expect(Governance.execute(expectedId, spells, elements)).revertedWith(GovernanceErrors.FROM_NOT_GOVERNANCE);
       expect(await Governance.council()).to.equal(WalletAddress);
     });
   });

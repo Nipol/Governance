@@ -37,7 +37,7 @@ contract CouncilMock is ICouncil {
     function resolve(bytes32 proposalId) external returns (bool success) {}
 
     function getProposalState(bytes32 proposalId) internal view returns (ProposalState state, Proposal storage p) {
-        p = proposals[proposalId];
+        (state, p) = (ProposalState.UNKNOWN, proposals[proposalId]);
     }
 
     function supportsInterface(bytes4 interfaceID) external pure returns (bool) {

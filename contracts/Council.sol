@@ -118,7 +118,9 @@ contract Council is IERC165, ICouncil, Initializer {
         // 거버넌스에 등록할 proposal 정보
         IGovernance.ProposalParams memory params = IGovernance.ProposalParams({
             proposer: msg.sender,
-            magichash: keccak256(abi.encode(keccak256(abi.encodePacked(spells)), keccak256(abi.encode(elements))))
+            magichash: bytes16(
+                keccak256(abi.encode(keccak256(abi.encodePacked(spells)), keccak256(abi.encode(elements))))
+            )
         });
 
         // 거버넌스 컨트랙트에 proposal 등록

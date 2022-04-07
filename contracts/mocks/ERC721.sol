@@ -36,7 +36,7 @@ contract ERC721Mock is ERC721 {
         _burn(tokenId);
     }
 
-    function tokenURI(uint256 _tokenId) external view returns (string memory) {
+    function tokenURI(uint256) external pure returns (string memory) {
         return "";
     }
 }

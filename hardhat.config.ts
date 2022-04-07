@@ -1,4 +1,4 @@
-import { task } from 'hardhat/config';
+import { task, subtask } from 'hardhat/config';
 import '@nomiclabs/hardhat-waffle';
 import '@nomiclabs/hardhat-ethers';
 import '@nomiclabs/hardhat-solhint';
@@ -10,6 +10,13 @@ import { resolve } from 'path';
 import { config as dotenvConfig } from 'dotenv';
 import { HardhatUserConfig } from 'hardhat/config';
 import { NetworkUserConfig } from 'hardhat/types';
+
+const { TASK_COMPILE_SOLIDITY_GET_SOURCE_PATHS } = require('hardhat/builtin-tasks/task-names');
+subtask(TASK_COMPILE_SOLIDITY_GET_SOURCE_PATHS).setAction(async (_, __, runSuper) => {
+  const paths = await runSuper();
+
+  return paths.filter((p: any) => !p.endsWith('.t.sol'));
+});
 
 if (process.env.NODE_ENV === 'production') {
   dotenvConfig({ path: resolve(__dirname, './.env.production') });
@@ -149,7 +156,7 @@ const config: HardhatUserConfig = {
     deployments: 'deployments',
     sources: './contracts',
     tests: './test',
-    cache: './cache',
+    cache: './hh-cache',
     artifacts: './artifacts',
   },
 

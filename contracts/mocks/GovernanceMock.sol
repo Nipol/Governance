@@ -11,16 +11,30 @@ import "../IGovernance.sol";
  * - 거버넌스는 카운슬의 실행 가능성에만 보팅에 대해 검증만 수행하기 때문에 거버넌스는 카운슬 구성원을 알수도 없고, 의존 및 관심사를 분리함
  */
 contract GovernanceMock is IGovernance {
-    function propose(ProposalParams memory params) external returns (bytes32 uniqueId, uint128 id) {
-        uniqueId = bytes32(0x00000000000000000000000000000000000000000000000000000000000000f1);
+    string public name;
+
+    address public council;
+
+    uint96 public nonce;
+
+    mapping(bytes32 => Proposal) public proposals;
+
+    function initialize(
+        string memory govName,
+        address initialCouncil,
+        uint32 executeDelay
+    ) external {}
+
+    function propose(ProposalParams memory) external pure returns (bytes32 proposalId, uint96 id) {
+        proposalId = bytes32(0x00000000000000000000000000000000000000000000000000000000000000f1);
         id = 0;
     }
 
-    function approve(bytes32 proposalId) external returns (bool success) {
+    function approve(bytes32) external pure returns (bool success) {
         success = true;
     }
 
-    function drop(bytes32 proposalId) external returns (bool success) {
+    function drop(bytes32) external pure returns (bool success) {
         success = true;
     }
 
@@ -30,13 +44,13 @@ contract GovernanceMock is IGovernance {
         bytes[] calldata elements
     ) external {}
 
-    function changeCouncil(address councilAddr) external {}
+    function changeCouncil(address) external {}
 
-    function changeDelay(uint32 executeDelay) external {}
+    function changeDelay(uint32) external {}
 
-    function emergencyExecute(bytes32[] calldata spells, bytes[] memory elements) external {}
+    function emergencyExecute(bytes32[] calldata, bytes[] memory) external {}
 
-    function emergencyCouncil(address councilorAddr) external {}
+    function emergencyCouncil(address) external {}
 
     function isValidSignature(bytes32 digest, bytes calldata signature) external view returns (bytes4 magicValue) {}
 
@@ -69,7 +83,7 @@ contract GovernanceMock is IGovernance {
         return 0xbc197c81;
     }
 
-    function supportsInterface(bytes4) external view returns (bool) {
+    function supportsInterface(bytes4) external pure returns (bool) {
         return true;
     }
 }

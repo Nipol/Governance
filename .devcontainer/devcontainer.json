@@ -30,8 +30,8 @@
       }
     },
     "terminal.integrated.defaultProfile.linux": "zsh (login)",
-    "solidity.packageDefaultDependenciesContractsDirectory": "",
-    "solidity.packageDefaultDependenciesDirectory": "",
+    "solidity.packageDefaultDependenciesContractsDirectory": "contracts",
+    "solidity.packageDefaultDependenciesDirectory": "lib",
     "solidity.linter": "solhint",
     "solidity.formatter": "prettier",
     "solidity.compileUsingRemoteVersion": "0.8.13",
@@ -79,9 +79,6 @@
     "github.vscode-pull-request-github",
     "styled-components.vscode-styled-components"
   ],
-
-  // Use 'forwardPorts' to make a list of ports inside the container available locally.
-  // "forwardPorts": [],
 
   // Use 'postCreateCommand' to run commands after the container is created.
   "postCreateCommand": "zsh ./.devcontainer/postCreateCommand.sh"
