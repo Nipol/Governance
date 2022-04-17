@@ -1,15 +1,26 @@
-// For format details, see https://aka.ms/vscode-remote/devcontainer.json or this file's README at:
-// https://github.com/microsoft/vscode-dev-containers/tree/v0.106.0/containers/typescript-node-12
 {
-  "name": "Contract Template",
+  "name": "@beandao/Governance",
   "build": {
     "dockerfile": "Dockerfile",
-    // Update 'VARIANT' to pick a Node version: 10, 12, 14
     "args": {
-      "VARIANT": "14",
-      "SOLC_VERSION": "0.8.7"
+      "VARIANT": "16-bullseye", // if you are x86-64 remove the "-bullseye"
+      "UPGRADE_PACKAGES": "true"
     }
   },
+  "runArgs": ["--init", "--privileged", "-v", "${env:HOME}${env:USERPROFILE}/.ssh:/home/node/.ssh-localhost:ro"],
+  "mounts": [
+    "source=dind-var-lib-docker,target=/var/lib/docker,type=volume",
+    "source=bean-contracts-node-node_modules,target=${containerWorkspaceFolder}/node_modules,type=volume"
+  ],
+  "overrideCommand": false,
+
+  // Uncomment to connect as a non-root user. See https://aka.ms/vscode-remote/containers/non-root.
+  "remoteUser": "node",
+  "remoteEnv": {
+    "PATH": "${containerEnv:PATH}:/home/node/.local/bin:/home/node/.foundry/bin",
+    "SOLC_VERSION": "0.8.13"
+  },
+
   // Set *default* container specific settings.json values on container create.
   "settings": {
     "terminal.integrated.profiles.linux": {
@@ -19,18 +30,17 @@
       }
     },
     "terminal.integrated.defaultProfile.linux": "zsh (login)",
-    "solidity.packageDefaultDependenciesContractsDirectory": "",
-    "solidity.packageDefaultDependenciesDirectory": "node_modules",
+    "solidity.packageDefaultDependenciesContractsDirectory": "contracts",
+    "solidity.packageDefaultDependenciesDirectory": "lib",
     "solidity.linter": "solhint",
     "solidity.formatter": "prettier",
-    "solidity.compileUsingRemoteVersion": "latest",
+    "solidity.compileUsingRemoteVersion": "0.8.13",
     "solidity.enableLocalNodeCompiler": false,
+    "search.exclude": { "lib": true },
     "git.ignoreLimitWarning": true,
-    "editor.rulers": [
-      120
-    ],
+    "editor.rulers": [120],
     "workbench.colorCustomizations": {
-      "editorRuler.foreground": "#ff408042",
+      "editorRuler.foreground": "#ff408042"
     },
     "editor.formatOnSave": true,
     "[javascript]": {
@@ -48,6 +58,10 @@
     "[solidity]": {
       "editor.defaultFormatter": "JuanBlanco.solidity"
     },
+    "files.associations": {
+      "*.yul": "solidity",
+      "*.yulp": "solidity"
+    },
     "editor.codeActionsOnSave": {
       "source.fixAll.eslint": true
     }
@@ -55,19 +69,17 @@
 
   // Add the IDs of extensions you want installed when the container is created.
   "extensions": [
+    "ms-azuretools.vscode-docker",
     "dbaeumer.vscode-eslint",
     "tintinweb.graphviz-interactive-preview",
     "esbenp.prettier-vscode",
-    "juanblanco.solidity",
+    "JuanBlanco.solidity",
     "tintinweb.solidity-visual-auditor",
     "ms-vscode.vscode-typescript-tslint-plugin",
-    "github.vscode-pull-request-github"
+    "github.vscode-pull-request-github",
+    "styled-components.vscode-styled-components"
   ],
-  // Use 'forwardPorts' to make a list of ports inside the container available locally.
-  // "forwardPorts": [],
-  // Uncomment to connect as a non-root user. See https://aka.ms/vscode-remote/containers/non-root.
-  "remoteUser": "node",
+
   // Use 'postCreateCommand' to run commands after the container is created.
-  "postCreateCommand": "sudo mkdir -p /home/node/.ssh && sudo cp -r /home/node/.ssh-localhost/* /home/node/.ssh && sudo chmod 707 /home/node/.ssh && sudo chmod 606 /home/node/.ssh/* && npm install",
-  "runArgs": ["-v", "${env:HOME}${env:USERPROFILE}/.ssh:/home/node/.ssh-localhost:ro"]
+  "postCreateCommand": "zsh ./.devcontainer/postCreateCommand.sh"
 }

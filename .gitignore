@@ -1,6 +1,7 @@
 node_modules
 coverage
 cache
+hh-cache
 artifacts
 build
 coverage.json
@@ -11,4 +12,12 @@ crytic-export
 .DS_Store
 contracts/README.md
 contracts/build
-scripts/deploy
+.env.production
+
+deployments/localhost
+
+graph-node/data
+subgraph/subgraph.yaml
+subgraph/generated
+subgraph/abis/*
+hardhat/*.txt

@@ -32,5 +32,5 @@ module.exports = {
   providerOptions: {
     accounts,
   },
-  skipFiles: ['Migrations.sol', 'Token.sol', 'oz', 'gnosis-safe'],
+  skipFiles: ['mocks', 'interfaces'],
 };
