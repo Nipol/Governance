@@ -102,10 +102,13 @@ contract Governance is Wizadry, Scheduler, Initializer, IGovernance {
      */
     function propose(ProposalParams calldata params) external onlyCouncil returns (bytes32 proposalId, uint96 id) {
         id = ++nonce;
-        proposalId = computeProposalId(id, params.proposer, params.magichash);
+        bytes16 magichash = bytes16(
+            keccak256(abi.encode(keccak256(abi.encodePacked(params.spells)), keccak256(abi.encode(params.elements))))
+        );
+        proposalId = computeProposalId(id, params.proposer, magichash);
         Proposal storage p = proposals[proposalId];
-        (p.id, p.magichash, p.state) = (id, params.magichash, ProposalState.AWAIT);
-        emit Proposed(proposalId, version, id, msg.sender, params.proposer, params.magichash);
+        (p.id, p.magichash, p.state) = (id, magichash, ProposalState.AWAIT);
+        emit Proposed(proposalId, version, id, msg.sender, params.proposer, params.spells, params.elements, magichash);
     }
 
     /**

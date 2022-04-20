@@ -29,7 +29,8 @@ interface IGovernance is IERC165, IERC1271, IERC721TokenReceiver, IERC1155TokenR
 
     struct ProposalParams {
         address proposer;
-        bytes16 magichash;
+        bytes32[] spells;
+        bytes[] elements;
     }
 
     struct VoteParam {
@@ -44,6 +45,8 @@ interface IGovernance is IERC165, IERC1271, IERC721TokenReceiver, IERC1155TokenR
         uint96 id,
         address indexed council,
         address indexed proposer,
+        bytes32[] spells,
+        bytes[] elements,
         bytes16 magichash
     );
 

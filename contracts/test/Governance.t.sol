@@ -70,7 +70,8 @@ contract GovernanceTest is DSTest {
     function testProposeFromNotCouncil() public {
         IGovernance.ProposalParams memory p = IGovernance.ProposalParams({
             proposer: address(this),
-            magichash: bytes16(0)
+            spells: new bytes32[](0),
+            elements: new bytes[](0)
         });
 
         vm.expectRevert(
@@ -82,15 +83,20 @@ contract GovernanceTest is DSTest {
     function testPropose() public govInit {
         IGovernance.ProposalParams memory p = IGovernance.ProposalParams({
             proposer: address(this),
-            magichash: bytes16(0)
+            spells: new bytes32[](0),
+            elements: new bytes[](0)
         });
+
+        bytes16 _magichash = bytes16(
+            keccak256(abi.encode(keccak256(abi.encodePacked(new bytes32[](0))), keccak256(abi.encode(new bytes[](0)))))
+        );
 
         (bytes32 proposalId, uint96 id) = g.propose(p);
         assertEq(id, g.nonce());
 
         (, bytes16 magichash, IGovernance.ProposalState state, ) = g.proposals(proposalId);
         assertEq(id, 1);
-        assertEq(magichash, bytes16(0));
+        assertEq(magichash, _magichash);
         assertEq(uint8(state), uint8(IGovernance.ProposalState.AWAIT));
     }
 
@@ -102,7 +108,8 @@ contract GovernanceTest is DSTest {
     function testApprove() public govInit {
         IGovernance.ProposalParams memory p = IGovernance.ProposalParams({
             proposer: address(this),
-            magichash: bytes16(0)
+            spells: new bytes32[](0),
+            elements: new bytes[](0)
         });
 
         (bytes32 proposalId, ) = g.propose(p);
@@ -120,7 +127,8 @@ contract GovernanceTest is DSTest {
     function testDrop() public govInit {
         IGovernance.ProposalParams memory p = IGovernance.ProposalParams({
             proposer: address(this),
-            magichash: bytes16(0)
+            spells: new bytes32[](0),
+            elements: new bytes[](0)
         });
 
         (bytes32 proposalId, ) = g.propose(p);
@@ -152,13 +160,10 @@ contract GovernanceTest is DSTest {
         spells[1] = spell;
         bytes[] memory elements = new bytes[](0);
 
-        bytes16 magichash = bytes16(
-            keccak256(abi.encode(keccak256(abi.encodePacked(spells)), keccak256(abi.encode(elements))))
-        );
-
         IGovernance.ProposalParams memory p = IGovernance.ProposalParams({
             proposer: address(this),
-            magichash: magichash
+            spells: spells,
+            elements: elements
         });
 
         (bytes32 proposalId, ) = g.propose(p);
@@ -195,13 +200,10 @@ contract GovernanceTest is DSTest {
         spells[0] = spell;
         bytes[] memory elements = new bytes[](0);
 
-        bytes16 magichash = bytes16(
-            keccak256(abi.encode(keccak256(abi.encodePacked(spells)), keccak256(abi.encode(elements))))
-        );
-
         IGovernance.ProposalParams memory p = IGovernance.ProposalParams({
             proposer: address(this),
-            magichash: magichash
+            spells: spells,
+            elements: elements
         });
 
         (bytes32 proposalId, ) = g.propose(p);
@@ -219,7 +221,8 @@ contract GovernanceTest is DSTest {
     function testExecuteNotResolved() public govInit {
         IGovernance.ProposalParams memory p = IGovernance.ProposalParams({
             proposer: address(this),
-            magichash: bytes16(0)
+            spells: new bytes32[](0),
+            elements: new bytes[](0)
         });
 
         bytes32[] memory spells = new bytes32[](0);
@@ -236,24 +239,41 @@ contract GovernanceTest is DSTest {
     }
 
     function testExecuteNotValidSpells() public govInit {
+        bytes32[] memory spells = new bytes32[](1);
+        bytes[] memory elements = new bytes[](1);
+
         IGovernance.ProposalParams memory p = IGovernance.ProposalParams({
             proposer: address(this),
-            magichash: bytes16(0)
+            spells: spells,
+            elements: elements
         });
-
-        bytes32[] memory spells = new bytes32[](0);
-        bytes[] memory elements = new bytes[](0);
-
-        bytes16 _magichash = bytes16(
-            keccak256(abi.encode(keccak256(abi.encodePacked(spells)), keccak256(abi.encode(elements))))
-        );
 
         (bytes32 proposalId, ) = g.propose(p);
         g.approve(bytes32(proposalId));
 
+        bytes32 spell = bytes32(
+            abi.encodePacked(
+                g.changeCouncil.selector,
+                bytes1(0x40),
+                bytes1(0x00),
+                bytes1(0xff),
+                bytes1(0xff),
+                bytes1(0xff),
+                bytes1(0xff),
+                bytes1(0xff),
+                bytes1(0xff),
+                address(g)
+            )
+        );
+        spells[0] = spell;
+
+        bytes16 magichash = bytes16(
+            keccak256(abi.encode(keccak256(abi.encodePacked(spells)), keccak256(abi.encode(new bytes[](1)))))
+        );
+
         vm.warp(block.timestamp + 2 days);
         vm.expectRevert(
-            abi.encodeWithSelector(bytes4(keccak256("Governance__InvalidExecuteData(bytes16)")), _magichash)
+            abi.encodeWithSelector(bytes4(keccak256("Governance__InvalidExecuteData(bytes16)")), magichash)
         );
         g.execute(proposalId, spells, elements);
 
@@ -265,13 +285,10 @@ contract GovernanceTest is DSTest {
         bytes32[] memory spells = new bytes32[](0);
         bytes[] memory elements = new bytes[](0);
 
-        bytes16 _magichash = bytes16(
-            keccak256(abi.encode(keccak256(abi.encodePacked(spells)), keccak256(abi.encode(elements))))
-        );
-
         IGovernance.ProposalParams memory p = IGovernance.ProposalParams({
             proposer: address(this),
-            magichash: _magichash
+            spells: spells,
+            elements: elements
         });
 
         (bytes32 proposalId, ) = g.propose(p);
@@ -307,13 +324,10 @@ contract GovernanceTest is DSTest {
         bytes[] memory elements = new bytes[](1);
         elements[0] = abi.encode(address(cm));
 
-        bytes16 magichash = bytes16(
-            keccak256(abi.encode(keccak256(abi.encodePacked(spells)), keccak256(abi.encode(elements))))
-        );
-
         IGovernance.ProposalParams memory p = IGovernance.ProposalParams({
             proposer: address(this),
-            magichash: magichash
+            spells: spells,
+            elements: elements
         });
 
         (bytes32 proposalId, ) = g.propose(p);
@@ -355,13 +369,10 @@ contract GovernanceTest is DSTest {
         bytes[] memory elements = new bytes[](1);
         elements[0] = abi.encode(address(this));
 
-        bytes16 magichash = bytes16(
-            keccak256(abi.encode(keccak256(abi.encodePacked(spells)), keccak256(abi.encode(elements))))
-        );
-
         IGovernance.ProposalParams memory p = IGovernance.ProposalParams({
             proposer: address(this),
-            magichash: magichash
+            spells: spells,
+            elements: elements
         });
 
         (bytes32 proposalId, ) = g.propose(p);
@@ -399,13 +410,10 @@ contract GovernanceTest is DSTest {
         bytes[] memory elements = new bytes[](1);
         elements[0] = abi.encode(2 days);
 
-        bytes16 magichash = bytes16(
-            keccak256(abi.encode(keccak256(abi.encodePacked(spells)), keccak256(abi.encode(elements))))
-        );
-
         IGovernance.ProposalParams memory p = IGovernance.ProposalParams({
             proposer: address(this),
-            magichash: magichash
+            spells: spells,
+            elements: elements
         });
 
         (bytes32 proposalId, ) = g.propose(p);

@@ -138,16 +138,16 @@ describe('Governance', () => {
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
 
-      const param = { proposer: WalletAddress, magichash };
+      const param = { proposer: WalletAddress, spells: [], elements: [] };
       await expect(Governance.propose(param))
         .to.emit(Governance, 'Proposed')
-        .withArgs(expectedId, version, nonce, WalletAddress, WalletAddress, magichash);
+        .withArgs(expectedId, version, nonce, WalletAddress, WalletAddress, [], [], magichash);
       expect(await Governance.nonce()).equal(nonce);
     });
 
     it('should be revert call from not council', async () => {
       const getNonce = await Governance.nonce();
-      const param = { proposer: WalletAddress, magichash: constants.HashZero.slice(0, 34) };
+      const param = { proposer: WalletAddress, spells: [], elements: [] };
       await expect(Governance.connect(To).propose(param)).revertedWith(GovernanceErrors.FROM_NOT_COUNCIL);
       expect(await Governance.nonce()).equal(getNonce);
     });
@@ -170,7 +170,7 @@ describe('Governance', () => {
         ['address', 'string', 'uint96', 'address', 'address', 'bytes16'],
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
-      const param = { proposer: WalletAddress, magichash };
+      const param = { proposer: WalletAddress, spells: [], elements: [] };
       await Governance.propose(param);
     });
 
@@ -202,7 +202,7 @@ describe('Governance', () => {
         ['address', 'string', 'uint96', 'address', 'address', 'bytes16'],
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
-      const param = { proposer: WalletAddress, magichash };
+      const param = { proposer: WalletAddress, spells: [], elements: [] };
       await Governance.propose(param);
     });
 
@@ -268,7 +268,7 @@ describe('Governance', () => {
         ['address', 'string', 'uint96', 'address', 'address', 'bytes16'],
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
-      const param = { proposer: WalletAddress, magichash };
+      const param = { proposer: WalletAddress, spells, elements };
       await Governance.propose(param);
       await Governance.approve(expectedId);
     });
@@ -356,7 +356,7 @@ describe('Governance', () => {
         ['address', 'string', 'uint96', 'address', 'address', 'bytes16'],
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
-      const param = { proposer: WalletAddress, magichash };
+      const param = { proposer: WalletAddress, spells, elements };
       await Governance.propose(param);
       await Governance.approve(expectedId);
 
@@ -403,7 +403,7 @@ describe('Governance', () => {
         ['address', 'string', 'uint96', 'address', 'address', 'bytes16'],
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
-      const param = { proposer: WalletAddress, magichash };
+      const param = { proposer: WalletAddress, spells, elements };
       await Governance.propose(param);
       await Governance.approve(expectedId);
 
@@ -449,7 +449,7 @@ describe('Governance', () => {
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
 
-      const param = { proposer: WalletAddress, magichash };
+      const param = { proposer: WalletAddress, spells, elements };
       await Governance.propose(param);
       await Governance.approve(expectedId);
 
@@ -505,7 +505,7 @@ describe('Governance', () => {
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
 
-      const param = { proposer: WalletAddress, magichash };
+      const param = { proposer: WalletAddress, spells, elements };
       await Governance.propose(param);
       await Governance.approve(expectedId);
 
@@ -550,7 +550,7 @@ describe('Governance', () => {
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
 
-      const param = { proposer: WalletAddress, magichash };
+      const param = { proposer: WalletAddress, spells, elements };
       await Governance.propose(param);
       await Governance.approve(expectedId);
 
@@ -595,7 +595,7 @@ describe('Governance', () => {
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
 
-      const param = { proposer: WalletAddress, magichash };
+      const param = { proposer: WalletAddress, spells, elements };
       await Governance.propose(param);
       await Governance.approve(expectedId);
 
@@ -711,7 +711,7 @@ describe('Governance', () => {
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
 
-      const param = { proposer: WalletAddress, magichash };
+      const param = { proposer: WalletAddress, spells, elements };
       await Governance.propose(param);
       await Governance.approve(expectedId);
 
@@ -758,7 +758,7 @@ describe('Governance', () => {
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
 
-      const param = { proposer: WalletAddress, magichash };
+      const param = { proposer: WalletAddress, spells, elements };
       await Governance.propose(param);
       await Governance.approve(expectedId);
 
@@ -806,7 +806,7 @@ describe('Governance', () => {
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
 
-      const param = { proposer: WalletAddress, magichash };
+      const param = { proposer: WalletAddress, spells, elements };
       await Governance.propose(param);
       await Governance.approve(expectedId);
 
@@ -851,7 +851,7 @@ describe('Governance', () => {
         [Governance.address, version, nonce, WalletAddress, WalletAddress, magichash],
       );
 
-      const param = { proposer: WalletAddress, magichash };
+      const param = { proposer: WalletAddress, spells, elements };
       await Governance.propose(param);
       await Governance.approve(expectedId);
 
