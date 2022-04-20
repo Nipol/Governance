@@ -1,0 +1,31 @@
+{
+  "name": "@beandao/governance",
+  "description": "Governance Smart Contract Integration Library",
+  "version": "1.0.1",
+  "files": [
+    "**/*.sol",
+    "/build/contracts/*.json",
+    "!/mocks/**/*",
+    "!/test/**/*"
+  ],
+  "scripts": {
+    "prepare": "bash ../scripts/prepare-contracts-package.sh"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nipol/Governance/.git"
+  },
+  "keywords": [
+    "solidity",
+    "ethereum",
+    "smart",
+    "contracts",
+    "security",
+    "zeppelin"
+  ],
+  "author": "yoonsung.eth",
+  "license": "LGPL-3.0",
+  "bugs": {
+    "url": "https://github.com/Nipol/Governance/issues"
+  }
+}
