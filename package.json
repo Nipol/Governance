@@ -13,6 +13,8 @@
     "@types/chai": "^4.3.0",
     "@types/mocha": "^7.0.2",
     "@types/node": "^14.18.1",
+    "@uniswap/v3-core": "^1.0.1",
+    "@uniswap/v3-periphery": "^1.4.1",
     "babel-eslint": "^10.1.0",
     "buidler-ethers-v5": "^0.2.3",
     "buidler-gas-reporter": "^0.1.4",

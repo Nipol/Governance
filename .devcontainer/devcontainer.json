@@ -10,7 +10,7 @@
   "runArgs": ["--init", "--privileged", "-v", "${env:HOME}${env:USERPROFILE}/.ssh:/home/node/.ssh-localhost:ro"],
   "mounts": [
     "source=dind-var-lib-docker,target=/var/lib/docker,type=volume",
-    "source=bean-contracts-node-node_modules,target=${containerWorkspaceFolder}/node_modules,type=volume"
+    "source=governance-node-node_modules,target=${containerWorkspaceFolder}/node_modules,type=volume"
   ],
   "overrideCommand": false,
 

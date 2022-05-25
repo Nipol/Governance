@@ -8,7 +8,7 @@ import "@beandao/contracts/interfaces/IERC165.sol";
 import "./IModule.sol";
 
 library StakeStorage {
-    bytes32 constant POSITION = keccak256("dao.bean.stakemodule");
+    bytes32 constant POSITION = keccak256("eth.dao.bean.stakemodule.stakemodule");
 
     struct Checkpoint {
         uint32 fromBlock;
@@ -20,7 +20,8 @@ library StakeStorage {
         uint256 totalSupply;
         mapping(address => mapping(uint32 => Checkpoint)) checkpoints;
         mapping(address => uint32) numCheckpoints;
-        mapping(address => uint256) balanceOf;
+        mapping(address => uint96) balanceOf;
+        mapping(address => address) delegates;
     }
 
     function stakeStorage() internal pure returns (Storage storage s) {
@@ -107,7 +108,31 @@ contract StakeModule is IModule {
         success = true;
     }
 
-    function delegate(address delegatee) external returns (bool success) {}
+    function delegate(address delegatee) external returns (bool success) {
+        StakeStorage.Storage storage s = StakeStorage.stakeStorage();
+
+        address currentDelegate = s.delegates[msg.sender];
+        uint96 delegatorBalance = s.balanceOf[msg.sender];
+
+        s.delegates[msg.sender] = delegatee;
+
+        // _moveDelegates(currentDelegate, delegatee, delegatorBalance);
+        if (currentDelegate != delegatee && delegatorBalance > 0) {
+            if (currentDelegate != address(0)) {
+                uint32 srcRepNum = s.numCheckpoints[currentDelegate];
+                uint96 srcRepOld = srcRepNum > 0 ? s.checkpoints[currentDelegate][srcRepNum - 1].power : 0;
+                uint96 srcRepNew = srcRepOld - delegatorBalance;
+                // _writeCheckpoint(currentDelegate, srcRepNum, srcRepOld, srcRepNew);
+            }
+
+            if (delegatee != address(0)) {
+                uint32 dstRepNum = s.numCheckpoints[delegatee];
+                uint96 dstRepOld = dstRepNum > 0 ? s.checkpoints[delegatee][dstRepNum - 1].power : 0;
+                uint96 dstRepNew = dstRepOld - delegatorBalance;
+                // _writeCheckpoint(delegatee, dstRepNum, dstRepOld, dstRepNew);
+            }
+        }
+    }
 
     function delegateWithSig(
         address delegatee,
@@ -117,9 +142,9 @@ contract StakeModule is IModule {
     ) external returns (bool success) {}
 
     /// @inheritdoc IModule
-    function getPriorPower(address target, uint256 blockNumber) external view returns (uint256 power) {
+    function getPriorVotes(address target, uint256 blockNumber) external view returns (uint256 votes) {
         require(blockNumber < block.number, "getPriorVotes: not yet determined");
-        power = getVotes(target, blockNumber);
+        votes = getVotes(target, blockNumber);
     }
 
     /// @inheritdoc IModule
@@ -128,9 +153,9 @@ contract StakeModule is IModule {
         rate = (getVotes(target, blockNumber) * 1e4) / getVotes(address(0), blockNumber);
     }
 
-    function getPowerToRate(uint256 power, uint256 blockNumber) external view returns (uint256 rate) {
+    function getVotesToRate(uint256 votes, uint256 blockNumber) external view returns (uint256 rate) {
         require(blockNumber < block.number, "getPriorVotes: not yet determined");
-        rate = (power * 1e4) / getVotes(address(0), blockNumber);
+        rate = (votes * 1e4) / getVotes(address(0), blockNumber);
     }
 
     function supportsInterface(bytes4 interfaceID) external pure returns (bool) {

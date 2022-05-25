@@ -1,1 +1,3 @@
 ds-test/=lib/ds-test/src/
+@beandao/=node_modules/@beandao/
+@uniswap/=node_modules/@uniswap/
