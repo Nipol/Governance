@@ -360,7 +360,7 @@ contract SnapshotModule is IModule, IERC165 {
         uint256 mid;
         while (low < high) {
             unchecked {
-                mid = (low + high) / 2;
+                mid = ((low & high) + (low ^ high) / 2);
             }
             if (ckpts[mid].fromBlock > blockNumber) {
                 high = mid;

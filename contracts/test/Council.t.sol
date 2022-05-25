@@ -20,6 +20,8 @@ interface HEVM {
     function label(address addr, string calldata label) external;
 
     function warp(uint256) external;
+
+    function roll(uint256) external;
 }
 
 /**
@@ -323,16 +325,27 @@ contract SnapshotCouncilTest__StakedToDelegatee is SnapshotModule__initialized {
         super.setUp();
 
         SnapshotModule(address(c)).stakeWithDelegate(1e18, address(0xa));
+        vm.roll(block.number + 1);
 
         vm.prank(address(1234));
         SnapshotModule(address(c)).stakeWithDelegate(1e18, address(0xb));
+        vm.roll(block.number + 1);
 
         vm.prank(address(5678));
         SnapshotModule(address(c)).stakeWithDelegate(1e18, address(0xb));
+        vm.roll(block.number + 1);
     }
 
     function testUnstake__FullAmount() public {
+        // unstake with undelegate 0xa
         SnapshotModule(address(c)).unstake(1e18);
+        vm.roll(block.number + 1);
+
+        // past
+        assertEq(SnapshotModule(address(c)).getPastVotes(address(0xa), block.number - 3), 1e18);
+        // now
+        assertEq(SnapshotModule(address(c)).getPastVotes(address(0xa), block.number), 0);
+
         assertEq(SnapshotModule(address(c)).getVotes(address(0xa)), 0);
         assertEq(SnapshotModule(address(c)).getDelegate(address(this)), address(0));
         assertEq(SnapshotModule(address(c)).getTotalSupply(), 2e18);
@@ -341,6 +354,13 @@ contract SnapshotCouncilTest__StakedToDelegatee is SnapshotModule__initialized {
 
     function testUnstake__LessAmount() public {
         SnapshotModule(address(c)).unstake(5e17);
+        vm.roll(block.number + 1);
+
+        // past
+        assertEq(SnapshotModule(address(c)).getPastVotes(address(0xa), block.number - 3), 1e18);
+        // now
+        assertEq(SnapshotModule(address(c)).getPastVotes(address(0xa), block.number), 5e17);
+
         assertEq(SnapshotModule(address(c)).getVotes(address(0xa)), 5e17);
         assertEq(SnapshotModule(address(c)).getDelegate(address(this)), address(0xa));
         assertEq(SnapshotModule(address(c)).getTotalSupply(), 25e17);
@@ -350,6 +370,13 @@ contract SnapshotCouncilTest__StakedToDelegatee is SnapshotModule__initialized {
     function testUnstake__OverAmount() public {
         vm.expectRevert(abi.encodeWithSignature("Panic(uint256)", 0x11));
         SnapshotModule(address(c)).unstake(2e18);
+        vm.roll(block.number + 1);
+
+        // past
+        assertEq(SnapshotModule(address(c)).getPastVotes(address(0xa), block.number - 3), 1e18);
+        // now
+        assertEq(SnapshotModule(address(c)).getPastVotes(address(0xa), block.number), 1e18);
+
         assertEq(SnapshotModule(address(c)).getVotes(address(0xa)), 1e18);
         assertEq(SnapshotModule(address(c)).getDelegate(address(this)), address(0xa));
         assertEq(SnapshotModule(address(c)).getTotalSupply(), 3e18);
