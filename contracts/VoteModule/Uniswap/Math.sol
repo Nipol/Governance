@@ -14,10 +14,14 @@ library Math {
         int24 lowerTick,
         int24 upperTick
     ) public pure returns (int24, int24) {
-        lowerTick = lowerTick - (lowerTick % tickSpacing);
+        unchecked {
+            if (lowerTick % tickSpacing != 0) {
+                lowerTick = lowerTick - (lowerTick % tickSpacing) + (lowerTick < 0 ? -tickSpacing : tickSpacing);
+            }
 
-        if (upperTick % tickSpacing != 0) {
-            upperTick = upperTick - (upperTick % tickSpacing);
+            if (upperTick % tickSpacing != 0) {
+                upperTick = upperTick - (upperTick % tickSpacing) + (upperTick < 0 ? -tickSpacing : tickSpacing);
+            }
         }
 
         return (lowerTick, upperTick);
@@ -37,7 +41,7 @@ library Math {
         uint256 r1
     ) public pure returns (uint160) {
         // 주소가 큰 것이, 뒤로 간다
-        if (a0 < a1) {
+        if (a0 > a1) {
             return encodePriceSqrt(r0, r1);
         }
 
