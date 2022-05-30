@@ -16,6 +16,7 @@ library SnapshotStorage {
     }
 
     struct Storage {
+        bool initialized;
         address token;
         mapping(address => uint256) balances;
         mapping(address => address) delegates;
@@ -37,11 +38,25 @@ contract SnapshotModule is IModule, IERC165 {
 
     event Delegate(address to, uint256 prevVotes, uint256 nextVotes);
 
+    modifier initializer() {
+        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
+        if (s.initialized) revert();
+        s.initialized = true;
+        _;
+    }
+
+    constructor(bytes memory data) {
+        address token = abi.decode(data, (address));
+        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
+        s.token = token;
+    }
+
     /**
      * @notice 해당 모듈을 초기화
+     * @dev 해당 모듈의 initialized 체크는 하지 않습니다. 해당 모듈은, Council을 통해서만 초기화 되므로
      * @param data 인코딩된 투표권으로 사용할 토큰 컨트랙트 주소
      */
-    function initialize(bytes calldata data) external {
+    function initialize(bytes calldata data) external initializer {
         address token = abi.decode(data, (address));
         SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
         s.token = token;
@@ -179,29 +194,52 @@ contract SnapshotModule is IModule, IERC165 {
     }
 
     /**
-     * @notice 해당 되는 블록 숫자를 기준하여 주소의 투표권 숫자를 반환합니다.
+     * @notice 입력된 블록을 기준하여 주소의 정량적인 투표권을 가져옵니다
+     * @param account 대상이 되는 주소
+     * @param blockNumber 기반이 되는 블록 숫자
+     * @return votes 투표 권한
      */
-    function getPastVotes(address account, uint256 blockNumber) public view returns (uint256) {
+    function getPriorVotes(address account, uint256 blockNumber) external view returns (uint256 votes) {
         if (blockNumber > block.number) revert();
         SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
-        return _checkpointsLookup(s.checkpoints[account], blockNumber);
+        votes = _checkpointsLookup(s.checkpoints[account], blockNumber);
+    }
+
+    /**
+     * @notice 입력된 블록을 기준하여, 주소의 정량적인 투표권을 비율화하여 가져옵니다.
+     * @param account 대상이 되는 주소
+     * @param blockNumber 기반이 되는 블록 숫자
+     * @return rate 비율
+     */
+    function getPriorRate(address account, uint256 blockNumber) external view returns (uint256 rate) {
+        if (blockNumber > block.number) revert();
+        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
+
+        rate =
+            (_checkpointsLookup(s.checkpoints[account], blockNumber) * 1e4) /
+            _checkpointsLookup(s.totalCheckpoints, blockNumber);
+    }
+
+    /**
+     * @notice 입력된 블록을 기준하여, 특정 수치의 투표권을 총 투표권의 비율로 계산하는 함수
+     * @param votes 계산하고자 하는 투표권한
+     * @param blockNumber 기반이 되는 블록 숫자
+     * @return rate 비율
+     */
+    function getVotesToRate(uint256 votes, uint256 blockNumber) external view returns (uint256 rate) {
+        if (blockNumber > block.number) revert();
+        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
+
+        rate = (votes * 1e4) / _checkpointsLookup(s.totalCheckpoints, blockNumber);
     }
 
     /**
      * @notice 해당 되는 블록 숫자를 기준하여 총 투표권 숫자를 반환합니다.
      */
-    function getPastTotalSupply(uint256 blockNumber) public view returns (uint256) {
+    function getPriorTotalSupply(uint256 blockNumber) external view returns (uint256 totalVotes) {
         if (blockNumber > block.number) revert();
         SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
-        return _checkpointsLookup(s.totalCheckpoints, blockNumber);
-    }
-
-    /**
-     * @notice 해당 모듈이 사용하는 토큰 주소를 반환합니다.
-     */
-    function getToken() public view returns (address token) {
-        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
-        token = s.token;
+        totalVotes = _checkpointsLookup(s.totalCheckpoints, blockNumber);
     }
 
     /**
@@ -220,12 +258,28 @@ contract SnapshotModule is IModule, IERC165 {
         delegatee = s.delegates[target];
     }
 
+    /**
+     * @notice 현재 총 투표권을 반환합니다.
+     */
     function getTotalSupply() public view returns (uint256 amount) {
         SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
         unchecked {
             uint256 length = s.totalCheckpoints.length;
             amount = length != 0 ? s.totalCheckpoints[length - 1].votes : 0;
         }
+    }
+
+    /**
+     * @notice 해당 모듈이 사용하는 토큰 주소를 반환합니다.
+     */
+    function getToken() public view returns (address token) {
+        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
+        token = s.token;
+    }
+
+    function isInitialized() public view returns (bool) {
+        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
+        return s.initialized;
     }
 
     function delegateVotes(
@@ -383,29 +437,6 @@ contract SnapshotModule is IModule, IERC165 {
     function _sub(uint256 a, uint256 b) private pure returns (uint256) {
         return a - b;
     }
-
-    /**
-     * @notice BlockNumber를 기준으로, target의 정량적인 투표권을 가져옵니다.
-     * @param target 대상이 되는 주소
-     * @param blockNumber 기반이 되는 블록 숫자
-     * @return votes 투표 권한
-     */
-    function getPriorVotes(address target, uint256 blockNumber) external view returns (uint256 votes) {}
-
-    /**
-     * @notice BlockNumber를 기준으로, target의 투표권을 비율화 하여 가져옵니다.
-     * @param target 대상이 되는 주소
-     * @param blockNumber 기반이 되는 블록 숫자
-     * @return rate 비율
-     */
-    function getPriorRate(address target, uint256 blockNumber) external view returns (uint256 rate) {}
-
-    /**
-     * @notice BlockNumber를 기준으로, 특정 수치의 투표권을 총 투표권의 비율로 계산하는 함수
-     * @param votes 계산하고자 하는 투표권한
-     * @param blockNumber 기반이 되는 블록 숫자
-     */
-    function getVotesToRate(uint256 votes, uint256 blockNumber) external view returns (uint256 rate) {}
 
     function supportsInterface(bytes4 interfaceID) external pure returns (bool) {
         return interfaceID == type(IModule).interfaceId || interfaceID == type(IERC165).interfaceId;
