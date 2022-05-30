@@ -5,7 +5,6 @@ pragma solidity ^0.8.0;
 
 import "@beandao/contracts/library/Initializer.sol";
 import "@beandao/contracts/interfaces/IERC165.sol";
-import "@beandao/contracts/interfaces/IERC721TokenReceiver.sol";
 import "./VoteModule/IModule.sol";
 import "./IGovernance.sol";
 import "./ICouncil.sol";
@@ -28,7 +27,7 @@ error Council__AlreadyVoted(bytes32 proposalId, bool vote);
  * 투표는 최대 255개의 타입을 가질 수 있으며, 타입마다 해석의 방식을 지정할 수 있다.
  * @dev
  */
-contract Council is IERC721TokenReceiver, IERC165, ICouncil, Initializer {
+contract Council is IERC165, ICouncil, Initializer {
     string public constant version = "1";
     Slot public slot;
 
@@ -37,40 +36,53 @@ contract Council is IERC721TokenReceiver, IERC165, ICouncil, Initializer {
      */
     mapping(bytes32 => Proposal) public proposals;
 
-    // constructor(
-    //     address voteModuleAddr,
-    //     bytes memory voteModuleData,
-    //     uint16 proposalQuorum,
-    //     uint16 voteQuorum,
-    //     uint16 emergencyQuorum,
-    //     uint16 voteStartDelay,
-    //     uint16 votePeriod,
-    //     uint16 voteChangableDelay
-    // ) {
-    //     require(IERC165(voteModuleAddr).supportsInterface(type(IModule).interfaceId));
-    //     require(proposalQuorum <= 1e4);
-    //     require(voteQuorum <= 1e4);
-    //     require(emergencyQuorum <= 1e4);
-    //     (bool success, ) = voteModuleAddr.delegatecall(voteModuleData);
-    //     require(success);
-    //     (
-    //         slot.proposalQuorum,
-    //         slot.voteQuorum,
-    //         slot.emergencyQuorum,
-    //         slot.voteStartDelay,
-    //         slot.votePeriod,
-    //         slot.voteChangableDelay,
-    //         slot.voteModule
-    //     ) = (
-    //         proposalQuorum,
-    //         voteQuorum,
-    //         emergencyQuorum,
-    //         voteStartDelay,
-    //         votePeriod,
-    //         voteChangableDelay,
-    //         voteModuleAddr
-    //     );
-    // }
+    /**
+     * @notice 컨트랙트를 초기화 하기 위한 함수이며, 단 한 번만 실행이 가능합니다.
+     * @param voteModuleAddr IModule을 구현하고 있는 모듈 컨트랙트 주소
+     * @param proposalQuorum 제안서를 만들기 위한 제안 임계 백분율, 최대 10000
+     * 긴급 제안서 만들기 위한 임계값?
+     * @param emergencyQuorum 긴급 제안서를 통과 시키기 위한 임계 백분율, 최대 10000
+     * @param voteQuorum 제안서를 통과시키기 위한 임계 백분율, 최대 10000
+     * @param voteStartDelay 제안서의 투표 시작 지연 값, 단위 일
+     * @param votePeriod 제안서의 투표 기간, 단위 일
+     * @param voteChangableDelay 투표를 변경할 때 지연 값, 단위 일
+     */
+    constructor(
+        address voteModuleAddr,
+        bytes memory voteModuleData,
+        uint16 proposalQuorum,
+        uint16 voteQuorum,
+        uint16 emergencyQuorum,
+        uint16 voteStartDelay,
+        uint16 votePeriod,
+        uint16 voteChangableDelay
+    ) {
+        require(IERC165(voteModuleAddr).supportsInterface(type(IModule).interfaceId));
+        require(proposalQuorum <= 1e4);
+        require(voteQuorum <= 1e4);
+        require(emergencyQuorum <= 1e4);
+        if (voteModuleData.length != 0) {
+            (bool success, ) = voteModuleAddr.delegatecall(voteModuleData);
+            require(success);
+        }
+        (
+            slot.proposalQuorum,
+            slot.voteQuorum,
+            slot.emergencyQuorum,
+            slot.voteStartDelay,
+            slot.votePeriod,
+            slot.voteChangableDelay,
+            slot.voteModule
+        ) = (
+            proposalQuorum,
+            voteQuorum,
+            emergencyQuorum,
+            voteStartDelay,
+            votePeriod,
+            voteChangableDelay,
+            voteModuleAddr
+        );
+    }
 
     /**
      * @notice 컨트랙트를 초기화 하기 위한 함수이며, 단 한 번만 실행이 가능합니다.
@@ -291,14 +303,5 @@ contract Council is IERC721TokenReceiver, IERC165, ICouncil, Initializer {
         unchecked {
             second = 60 * 60 * 24 * day;
         }
-    }
-
-    function onERC721Received(
-        address,
-        address,
-        uint256,
-        bytes memory
-    ) external pure returns (bytes4) {
-        return 0x150b7a02;
     }
 }
