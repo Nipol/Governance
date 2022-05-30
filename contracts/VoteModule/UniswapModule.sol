@@ -69,7 +69,7 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
     {
         UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
 
-        (address token0, address token1, int24 lowerTick, int24 upperTick, uint24 fee) = (
+        (address base, address pair, int24 lowerTick, int24 upperTick, uint24 fee) = (
             s.base,
             s.pair,
             s.lowerTick,
@@ -82,9 +82,7 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
             TickMath.getSqrtRatioAtTick(upperTick)
         );
 
-        (address tokenIn, address tokenOut) = isAmountInBase ? (token0, token1) : (token1, token0);
-
-        uint160 swapSqrtPriceLimit = isAmountInBase ? TickMath.MIN_SQRT_RATIO : TickMath.MAX_SQRT_RATIO;
+        (address tokenIn, address tokenOut) = isAmountInBase ? (base, pair) : (pair, base);
 
         amountForSwap = amountIn / 2;
         uint256 i; // Cur binary search iteration
@@ -95,85 +93,63 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
         uint256 leftoverAmount1;
 
         while (i != 128) {
-            // Swapping tokenIn -> tokenOut
-            // Have endSqrtRatio here so we know the price point to
-            // calculate the ratio to LP within a certain range
             (amountOutRecv, sqrtRatioX96, , ) = IQuoterV2(UNIV3_QUOTOR_V2).quoteExactInputSingle(
                 IQuoterV2.QuoteExactInputSingleParams({
                     tokenIn: tokenIn,
                     tokenOut: tokenOut,
                     amountIn: amountForSwap,
                     fee: fee,
-                    sqrtPriceLimitX96: swapSqrtPriceLimit
+                    sqrtPriceLimitX96: 0
                 })
             );
 
-            unchecked {
-                uint256 amountInPostSwap = amountIn - amountForSwap;
+            uint256 amountInPostSwap = amountIn - amountForSwap;
 
-                // Calculate liquidity received
-                // with: backingTokens we will have post swap
-                //       amount of protocol tokens recv
-                liquidity = LiquidityAmounts.getLiquidityForAmounts(
-                    sqrtRatioX96,
-                    lowerSqrtPrice,
-                    upperSqrtPrice,
-                    isAmountInBase ? amountInPostSwap : amountOutRecv,
-                    !isAmountInBase ? amountInPostSwap : amountOutRecv
-                );
+            liquidity = LiquidityAmounts.getLiquidityForAmounts(
+                sqrtRatioX96,
+                lowerSqrtPrice,
+                upperSqrtPrice,
+                isAmountInBase ? amountOutRecv : amountInPostSwap,
+                isAmountInBase ? amountInPostSwap : amountOutRecv
+            );
 
-                // Get the amounts needed for post swap end sqrt ratio end state
-                (uint256 lpAmount0, uint256 lpAmount1) = LiquidityAmounts.getAmountsForLiquidity(
-                    sqrtRatioX96,
-                    lowerSqrtPrice,
-                    upperSqrtPrice,
-                    liquidity
-                );
+            // Get the amounts needed for post swap end sqrt ratio end state
+            (uint256 lpAmount0, uint256 lpAmount1) = LiquidityAmounts.getAmountsForLiquidity(
+                sqrtRatioX96,
+                lowerSqrtPrice,
+                upperSqrtPrice,
+                liquidity
+            );
 
-                // Calculate leftover amounts with Trimming some dust
-                if (isAmountInBase) {
-                    leftoverAmount0 = ((amountInPostSwap - lpAmount0) / 100) * 100;
-                    leftoverAmount1 = ((amountOutRecv - lpAmount1) / 100) * 100;
+            // Calculate leftover amounts with Trimming some dust
+            if (isAmountInBase) {
+                leftoverAmount0 = ((amountInPostSwap - lpAmount1) / 100) * 100;
+                leftoverAmount1 = ((amountOutRecv - lpAmount0) / 100) * 100;
+            } else {
+                leftoverAmount0 = ((amountOutRecv - lpAmount1) / 100) * 100;
+                leftoverAmount1 = ((amountInPostSwap - lpAmount0) / 100) * 100;
+            }
+
+            // Termination condition, we approximated enough
+            if (leftoverAmount0 <= DUST_THRESHOLD && leftoverAmount1 <= DUST_THRESHOLD) {
+                break;
+            }
+
+            if (isAmountInBase) {
+                if (leftoverAmount0 > 0) {
+                    (low, amountForSwap, high) = (amountForSwap, (high + amountForSwap) / 2, high);
+                } else if (leftoverAmount1 > 0) {
+                    (low, amountForSwap, high) = (low, (low + amountForSwap) / 2, amountForSwap);
                 } else {
-                    leftoverAmount0 = ((amountOutRecv - lpAmount0) / 100) * 100;
-                    leftoverAmount1 = ((amountInPostSwap - lpAmount1) / 100) * 100;
-                }
-
-                // Termination condition, we approximated enough
-                if (leftoverAmount0 <= DUST_THRESHOLD && leftoverAmount1 <= DUST_THRESHOLD) {
                     break;
                 }
-
-                if (isAmountInBase) {
-                    // If amountIn = token0 AND we have too much leftover token0
-                    // we are not swapping enough
-                    if (leftoverAmount0 > 0) {
-                        (low, amountForSwap, high) = (amountForSwap, (high + amountForSwap) / 2, high);
-                    }
-                    // If amountIn = token0 AND we have too much leftover token1
-                    // we swapped to much
-                    else if (leftoverAmount1 > 0) {
-                        (low, amountForSwap, high) = (low, (low + amountForSwap) / 2, amountForSwap);
-                    }
-                    // Very optimal
-                    else {
-                        break;
-                    }
+            } else {
+                if (leftoverAmount1 > 0) {
+                    (low, amountForSwap, high) = (amountForSwap, (high + amountForSwap) / 2, high);
+                } else if (leftoverAmount0 > 0) {
+                    (low, amountForSwap, high) = (low, (low + amountForSwap) / 2, amountForSwap);
                 } else {
-                    // If amountIn = token1 AND we have too much leftover token1
-                    // we are not swapping enough
-                    if (leftoverAmount1 > 0) {
-                        (low, amountForSwap, high) = (amountForSwap, (high + amountForSwap) / 2, high);
-                    }
-                    // If amountIn = token1 AND we have too much leftover token0
-                    // we swapped to much
-                    else if (leftoverAmount0 > 0) {
-                        (low, amountForSwap, high) = (low, (low + amountForSwap) / 2, amountForSwap);
-                    }
-                    // Very optimal
-                    else {
-                        break;
-                    }
+                    break;
                 }
             }
 
@@ -267,25 +243,23 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
         uint160 sqrtRatioAX96 = TickMath.getSqrtRatioAtTick(lowerTick);
         uint160 sqrtRatioBX96 = TickMath.getSqrtRatioAtTick(upperTick);
 
-        bool isBase0 = base > pair ? false : true;
+        (uint256 amount0, uint256 amount1) = base > pair
+            ? (amountPairDesired, amountBaseDesired)
+            : (amountBaseDesired, amountPairDesired);
 
         // addLiquidity
         uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
             sqrtPriceX96,
             sqrtRatioAX96,
             sqrtRatioBX96,
-            isBase0 ? amountBaseDesired : amountPairDesired, // false
-            !isBase0 ? amountBaseDesired : amountPairDesired // false
+            amount0,
+            amount1
         );
 
+        if (liquidity == 0) revert();
+
         // this stage for token transfered
-        (uint256 amount0, uint256 amount1) = pool.mint(
-            address(this),
-            s.lowerTick,
-            s.upperTick,
-            liquidity,
-            abi.encode(msg.sender)
-        );
+        (amount0, amount1) = pool.mint(address(this), s.lowerTick, s.upperTick, liquidity, abi.encode(msg.sender));
 
         // check slippage
         if (amount0 < amountBaseMin && amount1 < amountPairMin) revert();
