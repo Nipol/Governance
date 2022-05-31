@@ -6,6 +6,7 @@ pragma solidity ^0.8.0;
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
 import "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3MintCallback.sol";
+import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/IQuoterV2.sol";
 import {PositionKey} from "@uniswap/v3-periphery/contracts/libraries/PositionKey.sol";
 import {LiquidityAmounts} from "./uniswap/LiquidityAmounts.sol";
@@ -29,8 +30,8 @@ library UniswapStorage {
         uint256 totalSupply;
         address pool;
         bytes32 PositionKey;
-        address base;
-        address pair;
+        address token0;
+        address token1;
         int24 lowerTick;
         int24 upperTick;
         uint24 fee;
@@ -63,15 +64,284 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
         _;
     }
 
-    function getSingleSidedAmount(uint256 amountIn, bool isAmountInBase)
+    // 모듈 초기화...
+    function initialize(bytes calldata data) external initializer {
+        address pool;
+        address token0;
+        address token1;
+        uint24 poolFee;
+        uint160 sqrtPriceX96;
+        int24 lowerTick;
+        int24 upperTick;
+        uint32 period;
+        // 토큰0, 토큰 1, 수수료, 토큰0을 기준 초기 가격, 틱 시작, 틱 종료, undelegate 기간
+        (token0, token1, poolFee, sqrtPriceX96, lowerTick, upperTick, period) = abi.decode(
+            data,
+            (address, address, uint24, uint160, int24, int24, uint32)
+        );
+
+        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
+
+        // Pool이 만들어지는 과정에서 토큰의 순서는 신경쓰지 않음.
+        pool = IUniswapV3Factory(UNIV3_FACTORY).createPool(token0, token1, poolFee);
+        IUniswapV3Pool(pool).initialize(sqrtPriceX96);
+        int24 tickSpacing = IUniswapV3Pool(pool).tickSpacing();
+
+        // 각 토큰이 Pool과 Router에 무제한 토큰 허용.
+        safeApprove(token0, pool, type(uint256).max);
+        safeApprove(token1, pool, type(uint256).max);
+        safeApprove(token0, UNIV3_ROUTER, type(uint256).max);
+        safeApprove(token1, UNIV3_ROUTER, type(uint256).max);
+
+        if (lowerTick > upperTick) {
+            (upperTick, lowerTick) = (lowerTick, upperTick);
+        }
+
+        unchecked {
+            // validate tick
+            if ((lowerTick % tickSpacing) != 0)
+                lowerTick = lowerTick - (lowerTick % tickSpacing) + (lowerTick < 0 ? -tickSpacing : tickSpacing);
+            if ((upperTick % tickSpacing) != 0)
+                upperTick = upperTick - (upperTick % tickSpacing) + (upperTick < 0 ? -tickSpacing : tickSpacing);
+        }
+
+        if (upperTick <= lowerTick) revert();
+
+        // 포지션 키 저장
+        bytes32 positionKey = PositionKey.compute(address(this), lowerTick, upperTick);
+
+        if (token0 > token1) {
+            (token0, token1) = (token1, token0);
+        }
+
+        (
+            s.pool,
+            s.PositionKey,
+            s.token0,
+            s.token1,
+            s.lowerTick,
+            s.upperTick,
+            s.fee,
+            s.tickSpacing,
+            s.undelegatePeriod
+        ) = (pool, positionKey, token0, token1, lowerTick, upperTick, poolFee, tickSpacing, period);
+    }
+
+    struct StakeParam {
+        uint256 amount0Desired;
+        uint256 amount1Desired;
+        uint256 amount0Min;
+        uint256 amount1Min;
+    }
+
+    /**
+     * @notice  두 개의 토큰을 이용하여, 투표권으로 변환합니다.
+     * @dev     추가되어야 할 수량값은 급격하게 가격이 변동하는 경우를 대비한 값이 입력되어야 합니다.
+     * @param   params token0과 token1의 수량과 최소한 추가되어야 할 수량 값
+     * TODO: Deadline.
+     */
+    function stake(StakeParam calldata params) external {
+        // 둘 다 0으로 들어오는 경우 실패
+        if (params.amount0Desired == 0 && params.amount1Desired == 0) revert();
+
+        // 저장된 데이터 조회
+        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
+        (IUniswapV3Pool pool, address token0, address token1, bytes32 positionKey, int24 lowerTick, int24 upperTick) = (
+            IUniswapV3Pool(s.pool),
+            s.token0,
+            s.token1,
+            s.PositionKey,
+            s.lowerTick,
+            s.upperTick
+        );
+
+        // transferFrom으로 사용자로 부터 토큰을 Council로 저장
+        if (params.amount0Desired != 0) safeTransferFrom(token0, msg.sender, address(this), params.amount0Desired);
+        if (params.amount1Desired != 0) safeTransferFrom(token1, msg.sender, address(this), params.amount1Desired);
+
+        // 현재 포지션에 있는 유동성
+        (uint128 existingLiquidity, , , , ) = pool.positions(positionKey);
+        // 현재 Pool의 가격
+        (uint160 sqrtPriceX96, , , , , , ) = pool.slot0();
+        uint160 sqrtRatioAX96 = TickMath.getSqrtRatioAtTick(lowerTick);
+        uint160 sqrtRatioBX96 = TickMath.getSqrtRatioAtTick(upperTick);
+
+        // Pool에 더해야 하는 유동성 계산
+        uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
+            sqrtPriceX96,
+            sqrtRatioAX96,
+            sqrtRatioBX96,
+            params.amount0Desired,
+            params.amount1Desired
+        );
+
+        if (liquidity == 0) revert();
+
+        // 해당 시점에서, Council이 가지고 있는 토큰을 등록함
+        (uint256 amount0, uint256 amount1) = pool.mint(
+            address(this),
+            s.lowerTick,
+            s.upperTick,
+            liquidity,
+            abi.encode(msg.sender)
+        );
+
+        // 실제로 추가된 토큰 수량 체크
+        if (amount0 < params.amount0Min && amount1 < params.amount1Min) revert();
+
+        // added totalShare
+        uint256 existingShareSupply = s.totalSupply;
+        uint256 shares;
+
+        if (existingShareSupply == 0) {
+            shares = liquidity;
+        } else {
+            // shares = existingShareSupply * liquidity / existingLiquidity;
+            shares = Math.mulDiv(existingShareSupply, liquidity, existingLiquidity);
+        }
+
+        s.balanceOf[msg.sender] += shares;
+        s.totalSupply += shares;
+
+        // 남아있는 dust 전송
+        {
+            (uint256 dust0, uint256 dust1) = (params.amount0Desired - amount0, params.amount1Desired - amount1);
+            if (params.amount0Desired - amount0 != 0) safeTransfer(token0, msg.sender, dust0);
+            if (params.amount1Desired - amount1 != 0) safeTransfer(token1, msg.sender, dust1);
+        }
+    }
+
+    struct StakeSingleParam {
+        uint256 amountIn;
+        uint256 amountInForSwap;
+        uint256 amountOutMin;
+        bool isAmountIn0;
+    }
+
+    /**
+     * @notice  하나의 토큰만 예치하여, swap을 통해 희석한 다음 투표권으로 변환합니다.
+     * @dev     추가되어야 할 수량값은 급격하게 가격이 변동하는 경우를 대비한 값이 입력되어야 합니다. param에 사용될 값은 `getSingleSidedAmount`
+     *          함수로 미리 계산되어야 합니다.
+     * @param   params 추가할 총 토큰 수량, 교환할 토큰 수량, 최소로 교환된 토큰 수량, 입력되는 토큰이
+     * TODO: Deadline.
+     */
+    function stake(StakeSingleParam calldata params) external {
+        if (params.amountInForSwap > params.amountIn) revert();
+
+        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
+        (
+            IUniswapV3Pool pool,
+            address token0,
+            address token1,
+            uint24 poolFee,
+            bytes32 positionKey,
+            int24 lowerTick,
+            int24 upperTick
+        ) = (IUniswapV3Pool(s.pool), s.token0, s.token1, s.fee, s.PositionKey, s.lowerTick, s.upperTick);
+
+        (address tokenIn, address tokenOut) = params.isAmountIn0 ? (token0, token1) : (token1, token0);
+
+        safeTransferFrom(tokenIn, msg.sender, address(this), params.amountIn);
+
+        ISwapRouter v3router = ISwapRouter(UNIV3_ROUTER);
+
+        uint256 amountOut = v3router.exactInput(
+            ISwapRouter.ExactInputParams({
+                path: abi.encodePacked(tokenIn, poolFee, tokenOut),
+                recipient: address(this),
+                deadline: block.timestamp,
+                amountIn: params.amountInForSwap,
+                amountOutMinimum: params.amountOutMin
+            })
+        );
+
+        (uint128 existingLiquidity, , , , ) = pool.positions(positionKey);
+        (uint160 sqrtPriceX96, , , , , , ) = pool.slot0();
+        uint160 sqrtRatioAX96 = TickMath.getSqrtRatioAtTick(lowerTick);
+        uint160 sqrtRatioBX96 = TickMath.getSqrtRatioAtTick(upperTick);
+
+        (uint256 amount0, uint256 amount1) = params.isAmountIn0
+            ? (params.amountIn - params.amountInForSwap, amountOut)
+            : (amountOut, params.amountIn - params.amountInForSwap);
+
+        uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
+            sqrtPriceX96,
+            sqrtRatioAX96,
+            sqrtRatioBX96,
+            amount0,
+            amount1
+        );
+
+        if (liquidity == 0) revert();
+
+        // this stage for token transfered
+        (amount0, amount1) = pool.mint(address(this), s.lowerTick, s.upperTick, liquidity, abi.encode(msg.sender));
+
+        // added totalShare
+        uint256 existingShareSupply = s.totalSupply;
+        uint256 shares;
+
+        if (existingShareSupply == 0) {
+            shares = liquidity;
+        } else {
+            // shares = existingShareSupply * liquidity / existingLiquidity;
+            shares = Math.mulDiv(existingShareSupply, liquidity, existingLiquidity);
+        }
+
+        s.balanceOf[msg.sender] += shares;
+        s.totalSupply += shares;
+
+        // 남아있는 dust 전송
+        {
+            (bool success, bytes memory data) = token0.staticcall(
+                abi.encodeWithSignature("balanceOf(address)", address(this))
+            );
+            require(success && data.length >= 32);
+            uint256 dust0 = abi.decode(data, (uint256));
+
+            (success, data) = token1.staticcall(abi.encodeWithSignature("balanceOf(address)", address(this)));
+            require(success && data.length >= 32);
+            uint256 dust1 = abi.decode(data, (uint256));
+
+            if (dust0 != 0) safeTransfer(token0, msg.sender, dust0);
+            if (dust1 != 0) safeTransfer(token1, msg.sender, dust1);
+        }
+    }
+
+    function unstake(uint256 shares) external {
+        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
+
+        s.balanceOf[msg.sender] -= shares;
+
+        (IUniswapV3Pool pool, uint256 currentTotalSupply, bytes32 key, int24 lowerTick, int24 upperTick) = (
+            IUniswapV3Pool(s.pool),
+            s.totalSupply,
+            s.PositionKey,
+            s.lowerTick,
+            s.upperTick
+        );
+
+        (uint128 existingLiquidity, , , , ) = pool.positions(key);
+        uint128 removedLiquidity = uint128(Math.mulDiv(existingLiquidity, shares, currentTotalSupply));
+        // 유동성 해제,
+        (uint256 amount0, uint256 amount1) = pool.burn(lowerTick, upperTick, removedLiquidity);
+        // 해제된 유동성 전송
+        (amount0, amount1) = pool.collect(msg.sender, lowerTick, upperTick, uint128(amount0), uint128(amount1));
+
+        unchecked {
+            s.totalSupply -= shares;
+        }
+    }
+
+    function getSingleSidedAmount(uint256 amountIn, bool isAmountIn0)
         external
         returns (uint128 liquidity, uint256 amountForSwap)
     {
         UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
 
-        (address base, address pair, int24 lowerTick, int24 upperTick, uint24 fee) = (
-            s.base,
-            s.pair,
+        (address token0, address token1, int24 lowerTick, int24 upperTick, uint24 fee) = (
+            s.token0,
+            s.token1,
             s.lowerTick,
             s.upperTick,
             s.fee
@@ -82,7 +352,7 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
             TickMath.getSqrtRatioAtTick(upperTick)
         );
 
-        (address tokenIn, address tokenOut) = isAmountInBase ? (base, pair) : (pair, base);
+        (address tokenIn, address tokenOut) = isAmountIn0 ? (token0, token1) : (token1, token0);
 
         amountForSwap = amountIn / 2;
         uint256 i; // Cur binary search iteration
@@ -109,8 +379,8 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
                 sqrtRatioX96,
                 lowerSqrtPrice,
                 upperSqrtPrice,
-                isAmountInBase ? amountOutRecv : amountInPostSwap,
-                isAmountInBase ? amountInPostSwap : amountOutRecv
+                isAmountIn0 ? amountInPostSwap : amountOutRecv,
+                isAmountIn0 ? amountOutRecv : amountInPostSwap
             );
 
             // Get the amounts needed for post swap end sqrt ratio end state
@@ -122,12 +392,12 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
             );
 
             // Calculate leftover amounts with Trimming some dust
-            if (isAmountInBase) {
-                leftoverAmount0 = ((amountInPostSwap - lpAmount1) / 100) * 100;
-                leftoverAmount1 = ((amountOutRecv - lpAmount0) / 100) * 100;
+            if (isAmountIn0) {
+                leftoverAmount0 = ((amountInPostSwap - lpAmount0) / 100) * 100;
+                leftoverAmount1 = ((amountOutRecv - lpAmount1) / 100) * 100;
             } else {
-                leftoverAmount0 = ((amountOutRecv - lpAmount1) / 100) * 100;
-                leftoverAmount1 = ((amountInPostSwap - lpAmount0) / 100) * 100;
+                leftoverAmount0 = ((amountOutRecv - lpAmount0) / 100) * 100;
+                leftoverAmount1 = ((amountInPostSwap - lpAmount1) / 100) * 100;
             }
 
             // Termination condition, we approximated enough
@@ -135,7 +405,7 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
                 break;
             }
 
-            if (isAmountInBase) {
+            if (isAmountIn0) {
                 if (leftoverAmount0 > 0) {
                     (low, amountForSwap, high) = (amountForSwap, (high + amountForSwap) / 2, high);
                 } else if (leftoverAmount1 > 0) {
@@ -156,151 +426,6 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
             unchecked {
                 ++i;
             }
-        }
-    }
-
-    // 모듈 초기화...
-    function initialize(bytes calldata data) external initializer {
-        address pool;
-        address base;
-        address pair;
-        uint24 poolFee;
-        uint160 sqrtPriceX96;
-        int24 lowerTick;
-        int24 upperTick;
-        uint32 period;
-        // 토큰0, 토큰 1, 수수료, 토큰0을 기준 초기 가격, 틱 시작, 틱 종료, undelegate 기간
-        (base, pair, poolFee, sqrtPriceX96, lowerTick, upperTick, period) = abi.decode(
-            data,
-            (address, address, uint24, uint160, int24, int24, uint32)
-        );
-
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
-
-        pool = IUniswapV3Factory(UNIV3_FACTORY).createPool(base, pair, poolFee);
-        IUniswapV3Pool(pool).initialize(sqrtPriceX96);
-        uint24 fee = IUniswapV3Pool(pool).fee();
-        int24 tickSpacing = IUniswapV3Pool(pool).tickSpacing();
-
-        // align and lowertick is always upper from initial.
-        (upperTick, lowerTick) = lowerTick > upperTick
-            ? (
-                lowerTick + (lowerTick > 0 ? int24(-tickSpacing) : int24(tickSpacing)),
-                upperTick + (upperTick > 0 ? int24(tickSpacing) : int24(-tickSpacing))
-            )
-            : (
-                upperTick + (upperTick > 0 ? int24(tickSpacing) : int24(-tickSpacing)),
-                lowerTick + (lowerTick > 0 ? int24(-tickSpacing) : int24(tickSpacing))
-            );
-
-        // validate tick
-        unchecked {
-            if ((lowerTick % tickSpacing) != 0)
-                lowerTick = lowerTick - (lowerTick % tickSpacing) + (lowerTick < 0 ? -tickSpacing : tickSpacing);
-            if ((upperTick % tickSpacing) != 0)
-                upperTick = upperTick - (upperTick % tickSpacing) + (upperTick < 0 ? -tickSpacing : tickSpacing);
-        }
-
-        if (upperTick <= lowerTick) revert();
-
-        bytes32 positionKey = PositionKey.compute(address(this), lowerTick, upperTick);
-
-        (s.pool, s.PositionKey, s.base, s.pair, s.lowerTick, s.upperTick, s.fee, s.tickSpacing, s.undelegatePeriod) = (
-            pool,
-            positionKey,
-            base,
-            pair,
-            lowerTick,
-            upperTick,
-            fee,
-            tickSpacing,
-            period
-        );
-    }
-
-    function stake(
-        uint256 amountBaseDesired,
-        uint256 amountPairDesired,
-        uint256 amountBaseMin,
-        uint256 amountPairMin
-    ) external {
-        if (amountBaseDesired == 0 && amountPairDesired == 0) {
-            revert();
-        }
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
-
-        (IUniswapV3Pool pool, address base, address pair, bytes32 positionKey, int24 lowerTick, int24 upperTick) = (
-            IUniswapV3Pool(s.pool),
-            s.base,
-            s.pair,
-            s.PositionKey,
-            s.lowerTick,
-            s.upperTick
-        );
-
-        (uint128 existingLiquidity, , , , ) = pool.positions(positionKey);
-        (uint160 sqrtPriceX96, , , , , , ) = pool.slot0();
-        uint160 sqrtRatioAX96 = TickMath.getSqrtRatioAtTick(lowerTick);
-        uint160 sqrtRatioBX96 = TickMath.getSqrtRatioAtTick(upperTick);
-
-        (uint256 amount0, uint256 amount1) = base > pair
-            ? (amountPairDesired, amountBaseDesired)
-            : (amountBaseDesired, amountPairDesired);
-
-        // addLiquidity
-        uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
-            sqrtPriceX96,
-            sqrtRatioAX96,
-            sqrtRatioBX96,
-            amount0,
-            amount1
-        );
-
-        if (liquidity == 0) revert();
-
-        // this stage for token transfered
-        (amount0, amount1) = pool.mint(address(this), s.lowerTick, s.upperTick, liquidity, abi.encode(msg.sender));
-
-        // check slippage
-        if (amount0 < amountBaseMin && amount1 < amountPairMin) revert();
-
-        // added totalShare
-        uint256 existingShareSupply = s.totalSupply;
-        uint256 shares;
-
-        if (existingShareSupply == 0) {
-            shares = liquidity;
-        } else {
-            // shares = existingShareSupply * liquidity / existingLiquidity;
-            shares = Math.mulDiv(existingShareSupply, liquidity, existingLiquidity);
-        }
-
-        s.balanceOf[msg.sender] += shares;
-        s.totalSupply += shares;
-    }
-
-    function unstake(uint256 shares) external {
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
-
-        s.balanceOf[msg.sender] -= shares;
-
-        (IUniswapV3Pool pool, uint256 currentTotalSupply, bytes32 key, int24 lowerTick, int24 upperTick) = (
-            IUniswapV3Pool(s.pool),
-            s.totalSupply,
-            s.PositionKey,
-            s.lowerTick,
-            s.upperTick
-        );
-
-        (uint128 existingLiquidity, , , , ) = pool.positions(key);
-        uint128 removedLiquidity = uint128(Math.mulDiv(existingLiquidity, shares, currentTotalSupply));
-        // 유동성 해제,
-        (uint256 amount0, uint256 amount1) = pool.burn(lowerTick, upperTick, removedLiquidity);
-        // 해제된 유동성 전송
-        (amount0, amount1) = pool.collect(msg.sender, lowerTick, upperTick, uint128(amount0), uint128(amount1));
-
-        unchecked {
-            s.totalSupply -= shares;
         }
     }
 
@@ -342,14 +467,13 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
     function uniswapV3MintCallback(
         uint256 amount0Owed,
         uint256 amount1Owed,
-        bytes calldata data
+        bytes calldata
     ) external {
         UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
 
-        (address pool, address token0, address token1) = (s.pool, s.base, s.pair);
-        (token0, token1) = token0 > token1 ? (token1, token0) : (token0, token1);
-        if (amount0Owed != 0) safeTransferFrom(token0, abi.decode(data, (address)), pool, amount0Owed);
-        if (amount1Owed != 0) safeTransferFrom(token1, abi.decode(data, (address)), pool, amount1Owed);
+        (address pool, address token0, address token1) = (s.pool, s.token0, s.token1);
+        if (amount0Owed != 0) safeTransfer(token0, pool, amount0Owed);
+        if (amount1Owed != 0) safeTransfer(token1, pool, amount1Owed);
     }
 
     // 총 투표권 수량
@@ -364,14 +488,19 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
         amount = s.balanceOf[owner];
     }
 
-    function getBaseToken() public view returns (address token) {
+    function getToken0() public view returns (address token) {
         UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
-        token = s.base;
+        token = s.token0;
     }
 
-    function getPairToken() public view returns (address token) {
+    function getToken1() public view returns (address token) {
         UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
-        token = s.pair;
+        token = s.token1;
+    }
+
+    function getTokens() public view returns (address token0, address token1) {
+        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
+        (token0, token1) = (s.token0, s.token1);
     }
 
     function getPool() public view returns (address pool) {
@@ -391,8 +520,8 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
         assembly {
             let freePointer := mload(0x40)
             mstore(freePointer, 0x23b872dd00000000000000000000000000000000000000000000000000000000)
-            mstore(add(freePointer, 4), and(from, 0xffffffffffffffffffffffffffffffffffffffff))
-            mstore(add(freePointer, 36), and(to, 0xffffffffffffffffffffffffffffffffffffffff))
+            mstore(add(freePointer, 4), from)
+            mstore(add(freePointer, 36), to)
             mstore(add(freePointer, 68), amount)
 
             let callStatus := call(gas(), tokenAddr, 0, freePointer, 100, 0, 0)
@@ -433,7 +562,49 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
         assembly {
             let freePointer := mload(0x40)
             mstore(freePointer, 0xa9059cbb00000000000000000000000000000000000000000000000000000000)
-            mstore(add(freePointer, 4), and(to, 0xffffffffffffffffffffffffffffffffffffffff))
+            mstore(add(freePointer, 4), to)
+            mstore(add(freePointer, 36), amount)
+
+            let callStatus := call(gas(), tokenAddr, 0, freePointer, 68, 0, 0)
+
+            let returnDataSize := returndatasize()
+            if iszero(callStatus) {
+                // Copy the revert message into memory.
+                returndatacopy(0, 0, returnDataSize)
+
+                // Revert with the same message.
+                revert(0, returnDataSize)
+            }
+            switch returnDataSize
+            case 32 {
+                // Copy the return data into memory.
+                returndatacopy(0, 0, returnDataSize)
+
+                // Set success to whether it returned true.
+                success := iszero(iszero(mload(0)))
+            }
+            case 0 {
+                // There was no return data.
+                success := 1
+            }
+            default {
+                // It returned some malformed input.
+                success := 0
+            }
+        }
+    }
+
+    function safeApprove(
+        address tokenAddr,
+        address to,
+        uint256 amount
+    ) internal returns (bool success) {
+        // solhint-disable-next-line no-inline-assembly
+        assembly {
+            let freePointer := mload(0x40)
+
+            mstore(freePointer, 0x095ea7b300000000000000000000000000000000000000000000000000000000)
+            mstore(add(freePointer, 4), to)
             mstore(add(freePointer, 36), amount)
 
             let callStatus := call(gas(), tokenAddr, 0, freePointer, 68, 0, 0)

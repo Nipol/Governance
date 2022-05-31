@@ -91,25 +91,14 @@ contract UniswapModuleTest is ZeroState {
         //     (address(token0) > address(token1) ? int24(-60) : int24(60));
         // int24 upperTick = TickMath.getTickAtSqrtRatio(upperPrice);
 
-        bool isToken0Base = false;
-
         // 베이스 토큰의 초기 가격을 pair를 통해서 설정합니다.
-        uint160 initialPrice = Math.encodePriceSqrt(
-            isToken0Base ? address(token0) : address(token1),
-            isToken0Base ? address(token1) : address(token0),
-            1e18,
-            0.01 ether
-        );
+        uint160 initialPrice = Math.encodePriceSqrt(address(token0), address(token1), 1e18, 0.01 ether);
 
         // 베이스 토큰의 최대 가격을 pair를 통해서 설정합니다.
-        uint160 upperPrice = Math.encodePriceSqrt(
-            isToken0Base ? address(token0) : address(token1),
-            isToken0Base ? address(token1) : address(token0),
-            1e18,
-            10 ether
-        );
+        uint160 upperPrice = Math.encodePriceSqrt(address(token0), address(token1), 1e18, 10 ether);
 
-        int24 lowerTick = TickMath.getTickAtSqrtRatio(initialPrice);
+        int24 lowerTick = TickMath.getTickAtSqrtRatio(initialPrice) +
+            (address(token0) > address(token1) ? int24(-60) : int24(60));
         int24 upperTick = TickMath.getTickAtSqrtRatio(upperPrice);
 
         // token0, token1, uniswap fee, initialPrice, lowerTick, upperTick, undelegatePeriod
@@ -129,8 +118,14 @@ contract UniswapModuleTest is ZeroState {
             voteChangableDelay
         );
 
-        assertEq(UniswapModule(address(c)).getBaseToken(), address(token0));
-        assertEq(UniswapModule(address(c)).getPairToken(), address(token1));
+        assertEq(
+            UniswapModule(address(c)).getToken0(),
+            address(token0) > address(token1) ? address(token1) : address(token0)
+        );
+        assertEq(
+            UniswapModule(address(c)).getToken1(),
+            address(token0) > address(token1) ? address(token0) : address(token1)
+        );
     }
 }
 
@@ -152,10 +147,6 @@ abstract contract UniswapModule__initialized is ZeroState {
         int24 lowerTick = TickMath.getTickAtSqrtRatio(initialPrice) +
             (address(token0) > address(token1) ? int24(-60) : int24(60));
         int24 upperTick = TickMath.getTickAtSqrtRatio(upperPrice);
-
-        emit log_int(TickMath.getTickAtSqrtRatio(initialPrice));
-        emit log_int(lowerTick);
-        emit log_int(upperTick);
 
         // token0, token1, uniswap fee, initialPrice, lowerTick, upperTick, undelegatePeriod
         bytes memory voteModuleData = abi.encodeWithSignature(
@@ -185,10 +176,19 @@ abstract contract UniswapModule__initialized is ZeroState {
 }
 
 contract UniswapModuleTest__Stake is UniswapModule__initialized {
-    function testStakeWithBaseToken() public {
-        UniswapModule(address(c)).stake(100e18, 0, 100e18, 0);
-        assertEq(UniswapModule(address(c)).balanceOf(address(this)), 10_37555_92495_89802_677);
-        assertEq(UniswapModule(address(c)).totalSupply(), 10_37555_92495_89802_677);
+    function testStake__initial__SingleToken() public {
+        bool isToken0Base = address(token1) > address(token0);
+
+        UniswapModule(address(c)).stake(
+            UniswapModule.StakeParam({
+                amount0Desired: isToken0Base ? 100e18 : 0,
+                amount1Desired: isToken0Base ? 0 : 100e18,
+                amount0Min: isToken0Base ? 100e18 : 0,
+                amount1Min: isToken0Base ? 0 : 100e18
+            })
+        );
+        assertEq(UniswapModule(address(c)).balanceOf(address(this)), 10_34448_07667_71197_919);
+        assertEq(UniswapModule(address(c)).totalSupply(), 10_34448_07667_71197_919);
 
         // address pair = UniswapModule(address(c)).getPairToken();
         // address base = UniswapModule(address(c)).getBaseToken();
@@ -208,69 +208,104 @@ contract UniswapModuleTest__Stake is UniswapModule__initialized {
         // );
     }
 
-    function testStakeWithPairToken() public {
+    function testStake__initial__PairToken() public {
+        bool isToken0Base = address(token1) > address(token0);
+
         vm.expectRevert("");
-        UniswapModule(address(c)).stake(0, 100e18, 0, 100e18);
+        UniswapModule(address(c)).stake(
+            UniswapModule.StakeParam({
+                amount0Desired: isToken0Base ? 0 : 10e18,
+                amount1Desired: isToken0Base ? 10e18 : 0,
+                amount0Min: isToken0Base ? 0 : 10e18,
+                amount1Min: isToken0Base ? 10e18 : 0
+            })
+        );
     }
 }
 
 abstract contract UniswapModule__Staked is UniswapModule__initialized {
     function setUp() public virtual override {
         super.setUp();
-        UniswapModule(address(c)).stake(100e18, 0, 100e18, 0);
+        bool isToken0Base = address(token1) > address(token0);
+
+        UniswapModule(address(c)).stake(
+            UniswapModule.StakeParam({
+                amount0Desired: isToken0Base ? 100e18 : 0,
+                amount1Desired: isToken0Base ? 0 : 100e18,
+                amount0Min: isToken0Base ? 100e18 : 0,
+                amount1Min: isToken0Base ? 0 : 100e18
+            })
+        );
     }
 }
 
 contract UniswapModule__SingleSidedAmount is UniswapModule__Staked {
-    function testGetSingleSidedAmount() public {
+    function testGetSingleSidedAmount__StakedBase__PairAmountForSwap() public {
+        bool isToken0Base = address(token1) > address(token0);
+
         // Add liquidity Single Side with PairToken
         uint256 amountIn = 10e18;
-        (uint128 liquidity, uint256 amountForSwap) = UniswapModule(address(c)).getSingleSidedAmount(amountIn, false);
-        emit log_named_uint("liquidity", liquidity);
-        emit log_named_uint("amountForSwap", amountForSwap);
-
-        address pair = UniswapModule(address(c)).getPairToken();
-        address base = UniswapModule(address(c)).getBaseToken();
-        address pool = UniswapModule(address(c)).getPool();
-
-        ISwapRouter v3router = ISwapRouter(UNIV3_ROUTER);
-
-        // Exact Input pair -> base
-        uint256 tokenBaseOut = v3router.exactInput(
-            ISwapRouter.ExactInputParams({
-                path: abi.encodePacked(address(pair), fee, address(base)),
-                recipient: address(this),
-                deadline: block.timestamp,
-                amountIn: amountForSwap,
-                amountOutMinimum: 0
-            })
+        (, uint256 amountForSwap) = UniswapModule(address(c)).getSingleSidedAmount(
+            amountIn,
+            isToken0Base ? false : true
         );
+        assertEq(amountForSwap, 2_61553_46757_19999_310);
 
-        UniswapModule(address(c)).stake(tokenBaseOut, amountIn - amountForSwap, 0, 0);
+        // check
+        // UniswapModule(address(c)).stake(
+        //     UniswapModule.StakeSingleParam({
+        //         amountIn: amountIn,
+        //         amountInForSwap: amountForSwap,
+        //         amountOutMin: 0, // ignore slippage
+        //         isAmountIn0: isToken0Base ? false : true
+        //     })
+        // );
 
-        // Add liquidity Single Side with BaseToken
-        amountIn = 1e18;
-        (liquidity, amountForSwap) = UniswapModule(address(c)).getSingleSidedAmount(amountIn, true);
+        // bool isToken0Base = address(token1) > address(token0);
+        // (address base, address pair) = isToken0Base
+        //     ? (address(token0), address(token1))
+        //     : (address(token1), address(token0));
 
-        // Exact Input pair -> base
-        tokenBaseOut = v3router.exactInput(
-            ISwapRouter.ExactInputParams({
-                path: abi.encodePacked(address(base), fee, address(pair)),
-                recipient: address(this),
-                deadline: block.timestamp,
-                amountIn: amountForSwap,
-                amountOutMinimum: 0
-            })
-        );
+        // address pool = UniswapModule(address(c)).getPool();
 
-        // 토큰을 어떤 걸 넣는지에 따라 순서 조정되면 됨.
-        UniswapModule(address(c)).stake(amountIn - amountForSwap, tokenBaseOut, 0, 0);
+        // ISwapRouter v3router = ISwapRouter(UNIV3_ROUTER);
 
-        emit log_named_uint("token0 balanceOf(this)", token0.balanceOf(address(this)));
-        emit log_named_uint("token1 balanceOf(this)", token1.balanceOf(address(this)));
+        // // Exact Input pair -> base
+        // uint256 tokenBaseOut = v3router.exactInput(
+        //     ISwapRouter.ExactInputParams({
+        //         path: abi.encodePacked(address(pair), fee, address(base)),
+        //         recipient: address(this),
+        //         deadline: block.timestamp,
+        //         amountIn: amountForSwap,
+        //         amountOutMinimum: 0
+        //     })
+        // );
 
-        emit log_named_uint("token0 balanceOf(Pool)", token0.balanceOf(pool));
-        emit log_named_uint("token1 balanceOf(Pool)", token1.balanceOf(pool));
+        // UniswapModule(address(c)).stake(tokenBaseOut, amountIn - amountForSwap, 0, 0);
+
+        // // Add liquidity Single Side with BaseToken
+        // amountIn = 1e18;
+        // (liquidity, amountForSwap) = UniswapModule(address(c)).getSingleSidedAmount(amountIn, true);
+
+        // // Exact Input pair -> base
+        // tokenBaseOut = v3router.exactInput(
+        //     ISwapRouter.ExactInputParams({
+        //         path: abi.encodePacked(address(base), fee, address(pair)),
+        //         recipient: address(this),
+        //         deadline: block.timestamp,
+        //         amountIn: amountForSwap,
+        //         amountOutMinimum: 0
+        //     })
+        // );
+
+        // // 토큰을 어떤 걸 넣는지에 따라 순서 조정되면 됨.
+        // UniswapModule(address(c)).stake(amountIn - amountForSwap, tokenBaseOut, 0, 0);
+
+        // emit log_named_uint("token0 balanceOf(this)", token0.balanceOf(address(this)));
+        // emit log_named_uint("token1 balanceOf(this)", token1.balanceOf(address(this)));
+
+        // emit log_named_uint("token0 balanceOf(Pool)", token0.balanceOf(pool));
+        // emit log_named_uint("token1 balanceOf(Pool)", token1.balanceOf(pool));
     }
 }
 
