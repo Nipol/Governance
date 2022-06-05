@@ -49,10 +49,18 @@ library UniswapStorage {
     }
 }
 
+/**
+ * @author  yoonsung.eth
+ * @title   UniswapModule
+ * @notice  투표권을 등록하는 방식을 유니스왑에 유동성을 공급하는 방법으로 수행합니다. 지정한 토큰과, 가치를 보장하기 위한 페어 토큰을 지정하여 유동성 풀을
+ *          만들어 해당 모듈을 통해 공급된 유동성은 투표권으로 계산됩니다. 해당 모듈이 초기화 될 때 유동성의 가격 범위를 지정할 수 있으며, 해당 영역에
+ *          대하여 유동성이 추가됩니다.
+ * @dev     모든 토큰은 해당 모듈을 사용하는 Council로 전송되어 Pool로 전송되는 과정을 거칩니다.
+ * TODO: DEADLINE, SNAPSHOT, FEE Policy, ETH to WETH, Optimization
+ */
 contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
     address public constant UNIV3_FACTORY = 0x1F98431c8aD98523631AE4a59f267346ea31F984;
     address public constant UNIV3_ROUTER = 0xE592427A0AEce92De3Edee1F18E0157C05861564;
-    address public constant UNIV3_POS_MANAGER = 0xC36442b4a4522E871399CD717aBDD847Ab11FE88;
     address public constant UNIV3_QUOTOR_V2 = 0x61fFE014bA17989E743c5F6cB21bF9697530B21e;
 
     uint256 internal constant DUST_THRESHOLD = 1e6;
@@ -87,9 +95,7 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
         IUniswapV3Pool(pool).initialize(sqrtPriceX96);
         int24 tickSpacing = IUniswapV3Pool(pool).tickSpacing();
 
-        // 각 토큰이 Pool과 Router에 무제한 토큰 허용.
-        safeApprove(token0, pool, type(uint256).max);
-        safeApprove(token1, pool, type(uint256).max);
+        // 각 토큰이 Pool과 Router에 무제한 토큰 허용
         safeApprove(token0, UNIV3_ROUTER, type(uint256).max);
         safeApprove(token1, UNIV3_ROUTER, type(uint256).max);
 
@@ -146,18 +152,12 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
 
         // 저장된 데이터 조회
         UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
-        (IUniswapV3Pool pool, address token0, address token1, bytes32 positionKey, int24 lowerTick, int24 upperTick) = (
+        (IUniswapV3Pool pool, bytes32 positionKey, int24 lowerTick, int24 upperTick) = (
             IUniswapV3Pool(s.pool),
-            s.token0,
-            s.token1,
             s.PositionKey,
             s.lowerTick,
             s.upperTick
         );
-
-        // transferFrom으로 사용자로 부터 토큰을 Council로 저장
-        if (params.amount0Desired != 0) safeTransferFrom(token0, msg.sender, address(this), params.amount0Desired);
-        if (params.amount1Desired != 0) safeTransferFrom(token1, msg.sender, address(this), params.amount1Desired);
 
         // 현재 포지션에 있는 유동성
         (uint128 existingLiquidity, , , , ) = pool.positions(positionKey);
@@ -202,13 +202,6 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
 
         s.balanceOf[msg.sender] += shares;
         s.totalSupply += shares;
-
-        // 남아있는 dust 전송
-        {
-            (uint256 dust0, uint256 dust1) = (params.amount0Desired - amount0, params.amount1Desired - amount1);
-            if (params.amount0Desired - amount0 != 0) safeTransfer(token0, msg.sender, dust0);
-            if (params.amount1Desired - amount1 != 0) safeTransfer(token1, msg.sender, dust1);
-        }
     }
 
     struct StakeSingleParam {
@@ -275,7 +268,7 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
         if (liquidity == 0) revert();
 
         // this stage for token transfered
-        (amount0, amount1) = pool.mint(address(this), s.lowerTick, s.upperTick, liquidity, abi.encode(msg.sender));
+        (amount0, amount1) = pool.mint(address(this), s.lowerTick, s.upperTick, liquidity, abi.encode(this));
 
         // added totalShare
         uint256 existingShareSupply = s.totalSupply;
@@ -463,19 +456,6 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
         return interfaceID == type(IModule).interfaceId || interfaceID == type(IERC165).interfaceId;
     }
 
-    // Pool에서 fallback으로 호출되는 함수
-    function uniswapV3MintCallback(
-        uint256 amount0Owed,
-        uint256 amount1Owed,
-        bytes calldata
-    ) external {
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
-
-        (address pool, address token0, address token1) = (s.pool, s.token0, s.token1);
-        if (amount0Owed != 0) safeTransfer(token0, pool, amount0Owed);
-        if (amount1Owed != 0) safeTransfer(token1, pool, amount1Owed);
-    }
-
     // 총 투표권 수량
     function totalSupply() external view returns (uint256 amount) {
         UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
@@ -506,6 +486,25 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
     function getPool() public view returns (address pool) {
         UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
         pool = s.pool;
+    }
+
+    // Pool에서 fallback으로 호출되는 함수
+    function uniswapV3MintCallback(
+        uint256 amount0Owed,
+        uint256 amount1Owed,
+        bytes calldata data
+    ) external {
+        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
+
+        address from = abi.decode(data, (address));
+        (address pool, address token0, address token1) = (s.pool, s.token0, s.token1);
+        if (from != address(this)) {
+            if (amount0Owed != 0) safeTransferFrom(token0, from, pool, amount0Owed);
+            if (amount1Owed != 0) safeTransferFrom(token1, from, pool, amount1Owed);
+        } else if (from == address(this)) {
+            if (amount0Owed != 0) safeTransfer(token0, pool, amount0Owed);
+            if (amount1Owed != 0) safeTransfer(token1, pool, amount1Owed);
+        }
     }
 
     /// @notice Modified from Gnosis

@@ -37,6 +37,7 @@ abstract contract ZeroState is DSTest {
     StandardToken token0;
     StandardToken token1;
     UniswapModule uniModule;
+    address base;
 
     function setUp() public virtual {
         token0 = new StandardToken("bean the token", "BEAN", 18);
@@ -69,8 +70,9 @@ abstract contract ZeroState is DSTest {
 
         vm.label(address(c), "Council");
         vm.label(address(this), "Caller");
-        vm.label(address(token0), "Token 0");
-        vm.label(address(token1), "Token 1");
+        vm.label(address(token0), "BaseToken");
+        vm.label(address(token1), "PairToken");
+        base = address(token0);
     }
 }
 
@@ -82,14 +84,6 @@ contract UniswapModuleTest is ZeroState {
         uint16 voteStartDelay = 0;
         uint16 votePeriod = 5;
         uint16 voteChangableDelay = 10;
-
-        // // 1 token : 0.01 ~ 0.00001
-        // uint160 initialPrice = Math.encodePriceSqrt(address(token0), address(token1), 1e18, 0.01 ether);
-        // uint160 upperPrice = Math.encodePriceSqrt(address(token0), address(token1), 1e18, 10 ether);
-        // // fee 0.3% with move to 1 tick upper
-        // int24 lowerTick = TickMath.getTickAtSqrtRatio(initialPrice) +
-        //     (address(token0) > address(token1) ? int24(-60) : int24(60));
-        // int24 upperTick = TickMath.getTickAtSqrtRatio(upperPrice);
 
         // 베이스 토큰의 초기 가격을 pair를 통해서 설정합니다.
         uint160 initialPrice = Math.encodePriceSqrt(address(token0), address(token1), 1e18, 0.01 ether);
@@ -177,14 +171,15 @@ abstract contract UniswapModule__initialized is ZeroState {
 
 contract UniswapModuleTest__Stake is UniswapModule__initialized {
     function testStake__initial__SingleToken() public {
-        bool isToken0Base = address(token1) > address(token0);
+        bool isToken0Base = base == UniswapModule(address(c)).getToken0();
+        bool isToken1Base = base == UniswapModule(address(c)).getToken1();
 
         UniswapModule(address(c)).stake(
             UniswapModule.StakeParam({
                 amount0Desired: isToken0Base ? 100e18 : 0,
-                amount1Desired: isToken0Base ? 0 : 100e18,
+                amount1Desired: isToken1Base ? 100e18 : 0,
                 amount0Min: isToken0Base ? 100e18 : 0,
-                amount1Min: isToken0Base ? 0 : 100e18
+                amount1Min: isToken1Base ? 100e18 : 0
             })
         );
         assertEq(UniswapModule(address(c)).balanceOf(address(this)), 10_34448_07667_71197_919);
@@ -209,15 +204,16 @@ contract UniswapModuleTest__Stake is UniswapModule__initialized {
     }
 
     function testStake__initial__PairToken() public {
-        bool isToken0Base = address(token1) > address(token0);
+        bool isToken0Base = base == UniswapModule(address(c)).getToken0();
+        bool isToken1Base = base == UniswapModule(address(c)).getToken1();
 
         vm.expectRevert("");
         UniswapModule(address(c)).stake(
             UniswapModule.StakeParam({
-                amount0Desired: isToken0Base ? 0 : 10e18,
-                amount1Desired: isToken0Base ? 10e18 : 0,
-                amount0Min: isToken0Base ? 0 : 10e18,
-                amount1Min: isToken0Base ? 10e18 : 0
+                amount0Desired: !isToken0Base ? 100e18 : 0,
+                amount1Desired: !isToken1Base ? 100e18 : 0,
+                amount0Min: !isToken0Base ? 100e18 : 0,
+                amount1Min: !isToken1Base ? 100e18 : 0
             })
         );
     }
@@ -226,22 +222,23 @@ contract UniswapModuleTest__Stake is UniswapModule__initialized {
 abstract contract UniswapModule__Staked is UniswapModule__initialized {
     function setUp() public virtual override {
         super.setUp();
-        bool isToken0Base = address(token1) > address(token0);
+        bool isToken0Base = base == UniswapModule(address(c)).getToken0();
+        bool isToken1Base = base == UniswapModule(address(c)).getToken1();
 
         UniswapModule(address(c)).stake(
             UniswapModule.StakeParam({
                 amount0Desired: isToken0Base ? 100e18 : 0,
-                amount1Desired: isToken0Base ? 0 : 100e18,
+                amount1Desired: isToken1Base ? 100e18 : 0,
                 amount0Min: isToken0Base ? 100e18 : 0,
-                amount1Min: isToken0Base ? 0 : 100e18
+                amount1Min: isToken1Base ? 100e18 : 0
             })
         );
     }
 }
 
-contract UniswapModule__SingleSidedAmount is UniswapModule__Staked {
-    function testGetSingleSidedAmount__StakedBase__PairAmountForSwap() public {
-        bool isToken0Base = address(token1) > address(token0);
+contract UniswapModuleTest__GetSingleSidedAmount is UniswapModule__Staked {
+    function testCalculatePairAmountForSwap() public {
+        bool isToken0Base = base == UniswapModule(address(c)).getToken0();
 
         // Add liquidity Single Side with PairToken
         uint256 amountIn = 10e18;
@@ -306,6 +303,100 @@ contract UniswapModule__SingleSidedAmount is UniswapModule__Staked {
 
         // emit log_named_uint("token0 balanceOf(Pool)", token0.balanceOf(pool));
         // emit log_named_uint("token1 balanceOf(Pool)", token1.balanceOf(pool));
+    }
+}
+
+abstract contract UniswapModule__StoredSingleSidedAmount is UniswapModule__Staked {
+    uint256 amountForSwap;
+    uint256 amountIn;
+    bool isToken0Base;
+
+    function setUp() public virtual override {
+        super.setUp();
+        isToken0Base = base == UniswapModule(address(c)).getToken0();
+        amountIn = 10e18;
+
+        // Add liquidity Single Side with PairToken
+        (, amountForSwap) = UniswapModule(address(c)).getSingleSidedAmount(amountIn, isToken0Base ? false : true);
+    }
+}
+
+contract UniswapModuleTest__StakeSigleSideToken is UniswapModule__StoredSingleSidedAmount {
+    function testStake__SingleSidedPairToken() public {
+        UniswapModule(address(c)).stake(
+            UniswapModule.StakeSingleParam({
+                amountIn: amountIn,
+                amountInForSwap: amountForSwap,
+                amountOutMin: 0, // ignore slippage
+                isAmountIn0: isToken0Base ? false : true
+            })
+        );
+
+        address pool = UniswapModule(address(c)).getPool();
+        emit log_named_uint("token0 balanceOf(this)", token0.balanceOf(address(this)));
+        emit log_named_uint("token1 balanceOf(this)", token1.balanceOf(address(this)));
+        emit log_named_uint("token0 balanceOf(Pool)", token0.balanceOf(pool));
+        emit log_named_uint("token1 balanceOf(Pool)", token1.balanceOf(pool));
+    }
+
+    function testStake__SingleSidedBaseToken() public {
+        vm.expectRevert("AS");
+        UniswapModule(address(c)).stake(
+            UniswapModule.StakeSingleParam({
+                amountIn: 1e18,
+                amountInForSwap: 0,
+                amountOutMin: 0, // ignore slippage
+                isAmountIn0: isToken0Base ? true : false
+            })
+        );
+
+        address pool = UniswapModule(address(c)).getPool();
+        emit log_named_uint("token0 balanceOf(this)", token0.balanceOf(address(this)));
+        emit log_named_uint("token1 balanceOf(this)", token1.balanceOf(address(this)));
+        emit log_named_uint("token0 balanceOf(Pool)", token0.balanceOf(pool));
+        emit log_named_uint("token1 balanceOf(Pool)", token1.balanceOf(pool));
+    }
+}
+
+abstract contract UniswapModule__StakedAndSwapped is UniswapModule__Staked {
+    uint256 amountForSwap;
+    uint256 amountIn;
+    bool isToken0Base;
+
+    function setUp() public virtual override {
+        super.setUp();
+        isToken0Base = base == UniswapModule(address(c)).getToken0();
+        amountIn = 10e18;
+
+        (, amountForSwap) = UniswapModule(address(c)).getSingleSidedAmount(amountIn, isToken0Base ? false : true);
+
+        UniswapModule(address(c)).stake(
+            UniswapModule.StakeSingleParam({
+                amountIn: amountIn,
+                amountInForSwap: amountForSwap,
+                amountOutMin: 0, // ignore slippage
+                isAmountIn0: isToken0Base ? false : true
+            })
+        );
+    }
+}
+
+contract UniswapModuleTest__Unstake is UniswapModule__StakedAndSwapped {
+    function testUnstake() public {
+        address pool = UniswapModule(address(c)).getPool();
+        emit log_named_uint("token0 balanceOf(this)", token0.balanceOf(address(this)));
+        emit log_named_uint("token1 balanceOf(this)", token1.balanceOf(address(this)));
+        emit log_named_uint("token0 balanceOf(Pool)", token0.balanceOf(pool));
+        emit log_named_uint("token1 balanceOf(Pool)", token1.balanceOf(pool));
+        uint256 shares = UniswapModule(address(c)).balanceOf(address(this));
+        emit log_named_uint("shares", shares);
+
+        UniswapModule(address(c)).unstake(shares);
+
+        emit log_named_uint("token0 balanceOf(this)", token0.balanceOf(address(this)));
+        emit log_named_uint("token1 balanceOf(this)", token1.balanceOf(address(this)));
+        emit log_named_uint("token0 balanceOf(Pool)", token0.balanceOf(pool));
+        emit log_named_uint("token1 balanceOf(Pool)", token1.balanceOf(pool));
     }
 }
 
