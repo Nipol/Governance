@@ -3,7 +3,7 @@
  */
 pragma solidity ^0.8.0;
 
-import "ds-test/test.sol";
+import "forge-std/Test.sol";
 import "../Council.sol";
 import "../mocks/Deployer.sol";
 import "../mocks/GovernanceMock.sol";
@@ -13,26 +13,13 @@ import {UniswapModule, Math, TickMath} from "../VoteModule/UniswapModule.sol";
 
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 
-interface HEVM {
-    function prank(address) external;
-
-    function expectRevert(bytes calldata) external;
-
-    function label(address addr, string calldata label) external;
-
-    function warp(uint256) external;
-
-    function roll(uint256) external;
-}
-
 /**
  * @notice 카운슬을 배포하는데 사용합니다
  */
-abstract contract ZeroState is DSTest {
+abstract contract ZeroState is Test {
     address public constant UNIV3_ROUTER = 0xE592427A0AEce92De3Edee1F18E0157C05861564;
     uint24 constant fee = 3000;
 
-    HEVM vm = HEVM(HEVM_ADDRESS);
     Council public c;
     StandardToken token0;
     StandardToken token1;
@@ -179,7 +166,8 @@ contract UniswapModuleTest__Stake is UniswapModule__initialized {
                 amount0Desired: isToken0Base ? 100e18 : 0,
                 amount1Desired: isToken1Base ? 100e18 : 0,
                 amount0Min: isToken0Base ? 100e18 : 0,
-                amount1Min: isToken1Base ? 100e18 : 0
+                amount1Min: isToken1Base ? 100e18 : 0,
+                deadline: block.timestamp
             })
         );
         assertEq(UniswapModule(address(c)).balanceOf(address(this)), 10_34448_07667_71197_919);
@@ -207,13 +195,14 @@ contract UniswapModuleTest__Stake is UniswapModule__initialized {
         bool isToken0Base = base == UniswapModule(address(c)).getToken0();
         bool isToken1Base = base == UniswapModule(address(c)).getToken1();
 
-        vm.expectRevert("");
+        vm.expectRevert();
         UniswapModule(address(c)).stake(
             UniswapModule.StakeParam({
                 amount0Desired: !isToken0Base ? 100e18 : 0,
                 amount1Desired: !isToken1Base ? 100e18 : 0,
                 amount0Min: !isToken0Base ? 100e18 : 0,
-                amount1Min: !isToken1Base ? 100e18 : 0
+                amount1Min: !isToken1Base ? 100e18 : 0,
+                deadline: block.timestamp
             })
         );
     }
@@ -230,7 +219,8 @@ abstract contract UniswapModule__Staked is UniswapModule__initialized {
                 amount0Desired: isToken0Base ? 100e18 : 0,
                 amount1Desired: isToken1Base ? 100e18 : 0,
                 amount0Min: isToken0Base ? 100e18 : 0,
-                amount1Min: isToken1Base ? 100e18 : 0
+                amount1Min: isToken1Base ? 100e18 : 0,
+                deadline: block.timestamp
             })
         );
     }
@@ -328,7 +318,8 @@ contract UniswapModuleTest__StakeSigleSideToken is UniswapModule__StoredSingleSi
                 amountIn: amountIn,
                 amountInForSwap: amountForSwap,
                 amountOutMin: 0, // ignore slippage
-                isAmountIn0: isToken0Base ? false : true
+                isAmountIn0: isToken0Base ? false : true,
+                deadline: block.timestamp
             })
         );
 
@@ -340,13 +331,14 @@ contract UniswapModuleTest__StakeSigleSideToken is UniswapModule__StoredSingleSi
     }
 
     function testStake__SingleSidedBaseToken() public {
-        vm.expectRevert("AS");
+        vm.expectRevert(bytes("AS"));
         UniswapModule(address(c)).stake(
             UniswapModule.StakeSingleParam({
                 amountIn: 1e18,
                 amountInForSwap: 0,
                 amountOutMin: 0, // ignore slippage
-                isAmountIn0: isToken0Base ? true : false
+                isAmountIn0: isToken0Base ? true : false,
+                deadline: block.timestamp
             })
         );
 
@@ -375,7 +367,8 @@ abstract contract UniswapModule__StakedAndSwapped is UniswapModule__Staked {
                 amountIn: amountIn,
                 amountInForSwap: amountForSwap,
                 amountOutMin: 0, // ignore slippage
-                isAmountIn0: isToken0Base ? false : true
+                isAmountIn0: isToken0Base ? false : true,
+                deadline: block.timestamp
             })
         );
     }
@@ -397,6 +390,28 @@ contract UniswapModuleTest__Unstake is UniswapModule__StakedAndSwapped {
         emit log_named_uint("token1 balanceOf(this)", token1.balanceOf(address(this)));
         emit log_named_uint("token0 balanceOf(Pool)", token0.balanceOf(pool));
         emit log_named_uint("token1 balanceOf(Pool)", token1.balanceOf(pool));
+    }
+
+    function testUnstake__halfAmount() public {
+        address pool = UniswapModule(address(c)).getPool();
+        emit log_named_uint("token0 balanceOf(this)", token0.balanceOf(address(this)));
+        emit log_named_uint("token1 balanceOf(this)", token1.balanceOf(address(this)));
+        emit log_named_uint("token0 balanceOf(Pool)", token0.balanceOf(pool));
+        emit log_named_uint("token1 balanceOf(Pool)", token1.balanceOf(pool));
+        uint256 shares = UniswapModule(address(c)).balanceOf(address(this)) / 2;
+        emit log_named_uint("shares", shares);
+
+        UniswapModule(address(c)).unstake(shares);
+
+        emit log_named_uint("token0 balanceOf(this)", token0.balanceOf(address(this)));
+        emit log_named_uint("token1 balanceOf(this)", token1.balanceOf(address(this)));
+        emit log_named_uint("token0 balanceOf(Pool)", token0.balanceOf(pool));
+        emit log_named_uint("token1 balanceOf(Pool)", token1.balanceOf(pool));
+    }
+
+    function testUnstake__NoneAmount() public {
+        vm.expectRevert();
+        UniswapModule(address(c)).unstake(0);
     }
 }
 

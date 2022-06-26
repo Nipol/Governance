@@ -3,18 +3,10 @@
  */
 pragma solidity ^0.8.0;
 
-import "ds-test/test.sol";
+import "forge-std/Test.sol";
 import {Governance, IGovernance} from "../Governance.sol";
 import "../mocks/Deployer.sol";
 import "../mocks/CouncilMock.sol";
-
-interface HEVM {
-    function prank(address) external;
-
-    function expectRevert(bytes calldata) external;
-
-    function warp(uint256) external;
-}
 
 contract SlotUpdater {
     uint256 public dummy;
@@ -40,8 +32,7 @@ contract Counter {
     }
 }
 
-contract GovernanceTest is DSTest {
-    HEVM vm = HEVM(HEVM_ADDRESS);
+contract GovernanceTest is Test {
     Governance g;
 
     modifier govInit() {
