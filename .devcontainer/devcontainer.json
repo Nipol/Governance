@@ -18,7 +18,7 @@
   "remoteUser": "node",
   "remoteEnv": {
     "PATH": "${containerEnv:PATH}:/home/node/.local/bin:/home/node/.foundry/bin",
-    "SOLC_VERSION": "0.8.13"
+    "SOLC_VERSION": "0.8.15"
   },
 
   // Set *default* container specific settings.json values on container create.
@@ -34,7 +34,7 @@
     "solidity.packageDefaultDependenciesDirectory": "lib",
     "solidity.linter": "solhint",
     "solidity.formatter": "prettier",
-    "solidity.compileUsingRemoteVersion": "0.8.13",
+    "solidity.compileUsingRemoteVersion": "0.8.15",
     "solidity.enableLocalNodeCompiler": false,
     "search.exclude": { "lib": true },
     "git.ignoreLimitWarning": true,

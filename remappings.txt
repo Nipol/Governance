@@ -1,3 +1,8 @@
-ds-test/=lib/ds-test/src/
 @beandao/=node_modules/@beandao/
+@ensdomains/=node_modules/@ensdomains/
+@nomiclabs/=node_modules/@nomiclabs/
+@openzeppelin/=node_modules/@openzeppelin/
 @uniswap/=node_modules/@uniswap/
+base64-sol/=node_modules/base64-sol/
+hardhat/=node_modules/hardhat/
+forge-std/=lib/forge-std/src/
