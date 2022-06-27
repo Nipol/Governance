@@ -83,6 +83,24 @@ contract Governance is Wizadry, Scheduler, Initializer, IGovernance {
      * @param initialCouncil 거버넌스를 통제할 Council 컨트랙트 주소, EOA일 수도 있으나 0x0이 될 수는 없다.
      * @param executeDelay 거버넌스로 사용될 기본 딜레이, Scheduler의 기준을 따르며, 1일 이상이여야 한다.
      */
+    constructor(
+        string memory govName,
+        address initialCouncil,
+        uint32 executeDelay
+    ) {
+        require(initialCouncil != address(0));
+        name = govName;
+        council = initialCouncil;
+        setDelay(executeDelay, MINIMUM_DELAY, MAXIMUM_DELAY);
+    }
+
+    /**
+     * @notice 해당 함수는 컨트랙트가 배포될 때 단 한번만 호출 되며, 다시는 호출할 수 없습니다. 거버넌스의 이름, 초기 Council, 실행 딜레이를
+     * @dev 실행 대기 기간,
+     * @param govName 해당 거버넌스의 이름, 사람이 읽을 수 있는 형태
+     * @param initialCouncil 거버넌스를 통제할 Council 컨트랙트 주소, EOA일 수도 있으나 0x0이 될 수는 없다.
+     * @param executeDelay 거버넌스로 사용될 기본 딜레이, Scheduler의 기준을 따르며, 1일 이상이여야 한다.
+     */
     function initialize(
         string memory govName,
         address initialCouncil,

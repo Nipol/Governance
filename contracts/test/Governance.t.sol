@@ -3,18 +3,10 @@
  */
 pragma solidity ^0.8.0;
 
-import "ds-test/test.sol";
+import "forge-std/Test.sol";
 import {Governance, IGovernance} from "../Governance.sol";
 import "../mocks/Deployer.sol";
 import "../mocks/CouncilMock.sol";
-
-interface HEVM {
-    function prank(address) external;
-
-    function expectRevert(bytes calldata) external;
-
-    function warp(uint256) external;
-}
 
 contract SlotUpdater {
     uint256 public dummy;
@@ -40,8 +32,7 @@ contract Counter {
     }
 }
 
-contract GovernanceTest is DSTest {
-    HEVM vm = HEVM(HEVM_ADDRESS);
+contract GovernanceTest is Test {
     Governance g;
 
     modifier govInit() {
@@ -50,11 +41,9 @@ contract GovernanceTest is DSTest {
     }
 
     function setUp() public {
-        // 0xce71065d4017f316ec606fe4422e11eb2c47c246
-        Governance tg = new Governance();
-        // 0x185a4dc360ce69bdccee33b3784b0282f7961aea
+        string memory _name = "bean the DAO";
+        Governance tg = new Governance(_name, address(this), 1 days);
         Deployer d = new Deployer(address(tg));
-        // 0x6e7c83fc225ef4b94e1f4cba9572226cc4ed6c9f
         g = Governance(d.deployIncrement());
     }
 
