@@ -68,25 +68,22 @@ contract SnapshotModule is IModule, IERC165 {
     function stake(uint256 amount) external {
         if (!(amount != 0)) revert();
         SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
-        (address token, address currentDelegate, uint256 latestBalance) = (
-            s.token,
-            s.delegates[msg.sender],
-            s.balances[msg.sender]
-        );
-
-        // 이전에 내가 아닌 다른 주소에 위임한 투표권이 있다면, 현재 밸런스 만큼 위임 해지 한 후에 amount를 더한 만큼 나에게 위임
-        if (currentDelegate != msg.sender && currentDelegate != address(0)) {
-            delegateVotes(currentDelegate, address(0), latestBalance);
-        }
+        (address token, address currentDelegatee) = (s.token, s.delegates[msg.sender]);
 
         safeTransferFrom(token, msg.sender, address(this), amount);
         unchecked {
-            s.balances[msg.sender] = latestBalance + amount;
-            delegateVotes(address(0), msg.sender, latestBalance + amount);
+            s.balances[msg.sender] += amount;
         }
-        s.delegates[msg.sender] = msg.sender;
 
-        // 총 위임량 업데이트
+        // 누군가에게 위임을 했다면,
+        if (currentDelegatee != msg.sender && currentDelegatee != address(0)) {
+            // 추가된 수량만큼 기존 위임자에게 위임 수량 증가.
+            delegateVotes(address(0), currentDelegatee, amount);
+        } else {
+            delegateVotes(address(0), msg.sender, amount);
+            s.delegates[msg.sender] = msg.sender;
+        }
+
         writeCheckpoint(s.totalCheckpoints, _add, amount);
     }
 
@@ -95,28 +92,33 @@ contract SnapshotModule is IModule, IERC165 {
      */
     function stakeWithDelegate(uint256 amount, address delegatee) external {
         if (!(amount != 0)) revert();
-        if (delegatee == msg.sender) revert();
+        if (delegatee == msg.sender || delegatee == address(0)) revert();
         SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
-        (address token, address currentDelegate, uint256 latestBalance) = (
+        (address token, address currentDelegatee, uint256 latestBalance) = (
             s.token,
             s.delegates[msg.sender],
             s.balances[msg.sender]
         );
 
-        // 이전 위임을 취소하여 투표권을 상환.
-        if (currentDelegate != msg.sender && currentDelegate != address(0) && latestBalance != 0) {
-            delegateVotes(currentDelegate, address(0), latestBalance);
-        }
-
         // 추가되는 투표권 카운슬로 전송
         safeTransferFrom(token, msg.sender, address(this), amount);
-        // 추가되는 만큼 밸런스 업데이트
-        s.balances[msg.sender] = latestBalance + amount;
 
-        // 되돌려진 투표권 + 새로운 투표권을 새로운 delegatee에게 위임
-        delegateVotes(address(0), delegatee, latestBalance + amount);
-        // 누구에게 위임하고 있는지 정보 변경,
-        s.delegates[msg.sender] = delegatee;
+        // 추가되는 만큼 밸런스 업데이트
+        unchecked {
+            s.balances[msg.sender] += amount;
+        }
+
+        // 위임 대상이 기존과 동일하다면 추가 금액만 위임.
+        if (delegatee == currentDelegatee) {
+            delegateVotes(address(0), delegatee, amount);
+        } else {
+            // 다른 위임 대상이라면 이전 위임을 취소하여 투표권을 새로운 대상으로 변경
+            delegateVotes(currentDelegatee, delegatee, latestBalance);
+            // 새로운 투표권을 새로운 delegatee에게 위임
+            delegateVotes(address(0), delegatee, amount);
+            // 누구에게 위임하고 있는지 정보 변경,
+            s.delegates[msg.sender] = delegatee;
+        }
 
         // 총 위임량 업데이트
         writeCheckpoint(s.totalCheckpoints, _add, amount);
@@ -130,21 +132,26 @@ contract SnapshotModule is IModule, IERC165 {
         if (!(amount != 0)) revert();
 
         SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
-        (address token, address currentDelegate, uint256 latestBalance) = (
+        (address token, address currentDelegatee, uint256 latestBalance) = (
             s.token,
             s.delegates[msg.sender],
             s.balances[msg.sender]
         );
 
-        delegateVotes(currentDelegate, address(0), amount);
+        // 현재 위임된 수량 해지.
+        delegateVotes(currentDelegatee, address(0), amount);
         unchecked {
-            if (!(latestBalance - amount != 0)) {
+            // 잔액이 0이라면 기존 밸런스 모두 삭제.
+            if (latestBalance - amount == 0) {
                 delete s.balances[msg.sender];
                 delete s.delegates[msg.sender];
+            } else {
+                // 잔액이 남았다면 차감만 함
+                s.balances[msg.sender] -= amount;
             }
-            s.balances[msg.sender] -= amount;
         }
 
+        // 총 위임량 업데이트
         writeCheckpoint(s.totalCheckpoints, _sub, amount);
 
         safeTransfer(token, msg.sender, amount);
@@ -183,17 +190,6 @@ contract SnapshotModule is IModule, IERC165 {
     }
 
     /**
-     * @notice 특정 주소의 마지막 투표권을 가져옵니다.
-     */
-    function getVotes(address account) public view returns (uint256 votes) {
-        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
-        uint256 length = s.checkpoints[account].length;
-        unchecked {
-            votes = length != 0 ? s.checkpoints[account][length - 1].votes : 0;
-        }
-    }
-
-    /**
      * @notice 입력된 블록을 기준하여 주소의 정량적인 투표권을 가져옵니다
      * @param account 대상이 되는 주소
      * @param blockNumber 기반이 되는 블록 숫자
@@ -229,7 +225,6 @@ contract SnapshotModule is IModule, IERC165 {
     function getVotesToRate(uint256 votes, uint256 blockNumber) external view returns (uint256 rate) {
         if (blockNumber > block.number) revert();
         SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
-
         rate = (votes * 1e4) / _checkpointsLookup(s.totalCheckpoints, blockNumber);
     }
 
@@ -245,9 +240,20 @@ contract SnapshotModule is IModule, IERC165 {
     /**
      * @notice 특정 주소의 총 예치 수량을 반환합니다.
      */
-    function getBalance(address target) public view returns (uint256 balance) {
+    function balanceOf(address target) public view returns (uint256 balance) {
         SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
         balance = s.balances[target];
+    }
+
+    /**
+     * @notice 특정 주소의 총 투표권을 반환합니다.
+     */
+    function voteOf(address target) public view returns (uint256 votes) {
+        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
+        uint256 length = s.checkpoints[target].length;
+        unchecked {
+            votes = length != 0 ? s.checkpoints[target][length - 1].votes : 0;
+        }
     }
 
     /**
@@ -261,7 +267,7 @@ contract SnapshotModule is IModule, IERC165 {
     /**
      * @notice 현재 총 투표권을 반환합니다.
      */
-    function getTotalSupply() public view returns (uint256 amount) {
+    function totalSupply() public view returns (uint256 amount) {
         SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
         unchecked {
             uint256 length = s.totalCheckpoints.length;
@@ -282,22 +288,29 @@ contract SnapshotModule is IModule, IERC165 {
         return s.initialized;
     }
 
+    /**
+     * @notice amount 수량만큼, from으로 부터 to로 이관합니다.
+     * @dev from이 Zero Address라면, 새로운 amount를 등록하는 것이며, to가 Zero Address라면 기존에 있던 amount를 감소시킵니다.
+     * @param from 위임을 부여할 대상
+     * @param to 위임이 이전될 대상
+     * @param amount 위임 수량
+     */
     function delegateVotes(
-        address delegator,
-        address delegatee,
+        address from,
+        address to,
         uint256 amount
     ) internal {
         SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
 
-        if (delegator != delegatee && amount != 0) {
-            if (delegator != address(0)) {
-                (uint256 oldWeight, uint256 newWeight) = writeCheckpoint(s.checkpoints[delegator], _sub, amount);
-                emit Delegate(delegator, oldWeight, newWeight);
+        if (from != to && amount != 0) {
+            if (from != address(0)) {
+                (uint256 oldWeight, uint256 newWeight) = writeCheckpoint(s.checkpoints[from], _sub, amount);
+                emit Delegate(from, oldWeight, newWeight);
             }
 
-            if (delegatee != address(0)) {
-                (uint256 oldWeight, uint256 newWeight) = writeCheckpoint(s.checkpoints[delegatee], _add, amount);
-                emit Delegate(delegatee, oldWeight, newWeight);
+            if (to != address(0)) {
+                (uint256 oldWeight, uint256 newWeight) = writeCheckpoint(s.checkpoints[to], _add, amount);
+                emit Delegate(to, oldWeight, newWeight);
             }
         }
     }
@@ -312,9 +325,7 @@ contract SnapshotModule is IModule, IERC165 {
         newWeight = op(oldWeight, delta);
 
         if (length > 0 && ckpts[length - 1].fromBlock == block.number) {
-            unchecked {
-                ckpts[length - 1].votes = uint224(newWeight);
-            }
+            ckpts[length - 1].votes = uint224(newWeight);
         } else {
             ckpts.push(SnapshotStorage.Checkpoint({fromBlock: uint32(block.number), votes: uint224(newWeight)}));
         }
