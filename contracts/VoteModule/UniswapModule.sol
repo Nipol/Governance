@@ -3,18 +3,17 @@
  */
 pragma solidity ^0.8.0;
 
-import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
-import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
-import "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3MintCallback.sol";
-import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
-import "@uniswap/v3-periphery/contracts/interfaces/IQuoterV2.sol";
-import {PositionKey} from "@uniswap/v3-periphery/contracts/libraries/PositionKey.sol";
-import {LiquidityAmounts} from "./uniswap/LiquidityAmounts.sol";
+import "UniswapV3Pack/v3-core/interfaces/IUniswapV3Pool.sol";
+import "UniswapV3Pack/v3-core/interfaces/IUniswapV3Factory.sol";
+import "UniswapV3Pack/v3-core/interfaces/callback/IUniswapV3MintCallback.sol";
+import "UniswapV3Pack/v3-core/libraries/TickMath.sol";
+import "UniswapV3Pack/v3-periphery/interfaces/ISwapRouter.sol";
+import "UniswapV3Pack/v3-periphery/interfaces/IQuoterV2.sol";
+import {PositionKey} from "UniswapV3Pack/v3-periphery/libraries/PositionKey.sol";
+import {LiquidityAmounts} from "UniswapV3Pack/v3-periphery/libraries/LiquidityAmounts.sol";
 import "@beandao/contracts/interfaces/IERC165.sol";
 
-import "./uniswap/INonfungiblePositionManager.sol";
-import "./uniswap/Math.sol";
-import "./uniswap/TickMath.sol";
+import "./Math.sol";
 import "./IModule.sol";
 
 // packing
