@@ -19,6 +19,7 @@ function getRemappings() {
     .readFileSync('remappings.txt', 'utf8')
     .split('\n')
     .filter(Boolean) // remove empty lines
+    .filter(line => !line.match('node_modules'))
     .map(line => line.trim().split('='));
 }
 
@@ -135,7 +136,7 @@ const config: HardhatUserConfig = {
   solidity: {
     compilers: [
       {
-        version: '0.8.15',
+        version: '0.8.16',
         settings: {
           viaIR: true,
           optimizer: {

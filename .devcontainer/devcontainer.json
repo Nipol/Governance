@@ -18,7 +18,7 @@
   "remoteUser": "node",
   "remoteEnv": {
     "PATH": "${containerEnv:PATH}:/home/node/.local/bin:/home/node/.foundry/bin",
-    "SOLC_VERSION": "0.8.15"
+    "SOLC_VERSION": "0.8.16"
   },
 
   // Set *default* container specific settings.json values on container create.
@@ -31,7 +31,16 @@
     },
     "terminal.integrated.defaultProfile.linux": "zsh (login)",
     "solidity.packageDefaultDependenciesContractsDirectory": "contracts",
-    "solidity.packageDefaultDependenciesDirectory": "lib",
+    "solidity.remappings": [
+      "@beandao/=node_modules/@beandao",
+      "@openzeppelin/=node_modules/@openzeppelin/",
+      "@uniswap/=node_modules/@uniswap/",
+      "base64-sol/=node_modules/base64-sol/",
+      "hardhat/=node_modules/hardhat/",
+      "forge-std/=lib/forge-std/src/",
+      "hardhat/=node_modules/hardhat/",
+      "UniswapV3Pack/=lib/UniswapV3Pack/src/"
+    ],
     "solidity.linter": "solhint",
     "solidity.formatter": "prettier",
     "solidity.compileUsingRemoteVersion": "0.8.15",

@@ -27,7 +27,7 @@ error Council__AlreadyVoted(bytes32 proposalId, bool vote);
  * 투표는 최대 255개의 타입을 가질 수 있으며, 타입마다 해석의 방식을 지정할 수 있다.
  * @dev
  */
-contract Council is IERC165, ICouncil, Initializer {
+contract Council is IERC165, ICouncil {
     string public constant version = "1";
     address public voteModule;
     Slot public slot;
