@@ -34,16 +34,11 @@ error Governance__InvalidSignature_V();
  * @notice DAO의 지갑이자, 거버넌스 역할을 수행할 최종 인스턴스.
  * - 거버넌스는 카운슬의 실행 가능성에만 보팅에 대해 검증만 수행하기 때문에 거버넌스는 카운슬 구성원을 알수도 없음.
  */
-contract Governance is Wizadry, Scheduler, Initializer, IGovernance {
-    uint32 constant GRACE_PERIOD = 7 days;
-    uint32 constant MINIMUM_DELAY = 1 days;
-    uint32 constant MAXIMUM_DELAY = 30 days;
+contract Governance is Wizadry, Scheduler, IGovernance {
+    uint32 public constant GRACE_PERIOD = 7 days;
+    uint32 public constant MINIMUM_DELAY = 1 days;
+    uint32 public constant MAXIMUM_DELAY = 30 days;
     string public constant version = "1";
-
-    /**
-     * @notice 어떤 거버넌스인지에 대해 사람이 읽을 수 있는 형태의 이름
-     */
-    string public name;
 
     /**
      * @notice 거버넌스 보팅을 계산할 이사회 컨트랙트, EOA도 가능하다.
@@ -79,37 +74,26 @@ contract Governance is Wizadry, Scheduler, Initializer, IGovernance {
     /**
      * @notice 해당 함수는 컨트랙트가 배포될 때 단 한번만 호출 되며, 다시는 호출할 수 없습니다. 거버넌스의 이름, 초기 Council, 실행 딜레이를
      * @dev 실행 대기 기간,
-     * @param govName 해당 거버넌스의 이름, 사람이 읽을 수 있는 형태
      * @param initialCouncil 거버넌스를 통제할 Council 컨트랙트 주소, EOA일 수도 있으나 0x0이 될 수는 없다.
      * @param executeDelay 거버넌스로 사용될 기본 딜레이, Scheduler의 기준을 따르며, 1일 이상이여야 한다.
      */
-    constructor(
-        string memory govName,
-        address initialCouncil,
-        uint32 executeDelay
-    ) {
+    constructor(address initialCouncil, uint32 executeDelay) {
         require(initialCouncil != address(0));
-        name = govName;
         council = initialCouncil;
         setDelay(executeDelay, MINIMUM_DELAY, MAXIMUM_DELAY);
     }
 
     /**
-     * @notice 해당 함수는 컨트랙트가 배포될 때 단 한번만 호출 되며, 다시는 호출할 수 없습니다. 거버넌스의 이름, 초기 Council, 실행 딜레이를
-     * @dev 실행 대기 기간,
-     * @param govName 해당 거버넌스의 이름, 사람이 읽을 수 있는 형태
-     * @param initialCouncil 거버넌스를 통제할 Council 컨트랙트 주소, EOA일 수도 있으나 0x0이 될 수는 없다.
-     * @param executeDelay 거버넌스로 사용될 기본 딜레이, Scheduler의 기준을 따르며, 1일 이상이여야 한다.
+     * @notice 어떤 거버넌스인지에 대해 사람이 읽을 수 있는 형태의 이름
      */
-    function initialize(
-        string memory govName,
-        address initialCouncil,
-        uint32 executeDelay
-    ) external initializer {
-        require(initialCouncil != address(0));
-        name = govName;
-        council = initialCouncil;
-        setDelay(executeDelay, MINIMUM_DELAY, MAXIMUM_DELAY);
+    function name() public pure returns (string memory) {
+        // bean the DAO
+        // solhint-disable-next-line no-inline-assembly
+        assembly {
+            mstore(0x20, 0x20)
+            mstore(0x4c, 0x0c6265616e207468652044414f)
+            return(0x20, 0x60)
+        }
     }
 
     /**
@@ -219,6 +203,7 @@ contract Governance is Wizadry, Scheduler, Initializer, IGovernance {
 
     /**
      * @notice Council이 EOA로 등록된 경우, EOA가 Governance를 대신하여 Off-chain 투표를 수행하도록 합니다.
+     * TODO: signature를 calldata로 변경하고, 아래 전체 과정 어셈블리로 작성
      */
     function isValidSignature(bytes32 digest, bytes memory signature) external view returns (bytes4 magicValue) {
         uint8 v;

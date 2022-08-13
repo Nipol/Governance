@@ -29,6 +29,7 @@ error Council__AlreadyVoted(bytes32 proposalId, bool vote);
  */
 contract Council is IERC165, ICouncil, Initializer {
     string public constant version = "1";
+    address public voteModule;
     Slot public slot;
 
     /**
@@ -38,7 +39,6 @@ contract Council is IERC165, ICouncil, Initializer {
 
     /**
      * @notice 컨트랙트를 초기화 하기 위한 함수이며, 단 한 번만 실행이 가능합니다.
-     * @param voteModuleAddr IModule을 구현하고 있는 모듈 컨트랙트 주소
      * @param proposalQuorum 제안서를 만들기 위한 제안 임계 백분율, 최대 10000
      * 긴급 제안서 만들기 위한 임계값?
      * @param emergencyQuorum 긴급 제안서를 통과 시키기 위한 임계 백분율, 최대 10000
@@ -48,93 +48,31 @@ contract Council is IERC165, ICouncil, Initializer {
      * @param voteChangableDelay 투표를 변경할 때 지연 값, 단위 일
      */
     constructor(
-        address voteModuleAddr,
-        bytes memory voteModuleData,
         uint16 proposalQuorum,
         uint16 voteQuorum,
         uint16 emergencyQuorum,
-        uint16 voteStartDelay,
-        uint16 votePeriod,
-        uint16 voteChangableDelay
+        uint32 voteStartDelay,
+        uint32 votePeriod,
+        uint32 voteChangableDelay
     ) {
-        require(IERC165(voteModuleAddr).supportsInterface(type(IModule).interfaceId));
         require(proposalQuorum <= 1e4);
         require(voteQuorum <= 1e4);
         require(emergencyQuorum <= 1e4);
-        if (voteModuleData.length != 0) {
-            (bool success, ) = voteModuleAddr.delegatecall(voteModuleData);
-            require(success);
-        }
         (
             slot.proposalQuorum,
             slot.voteQuorum,
             slot.emergencyQuorum,
             slot.voteStartDelay,
             slot.votePeriod,
-            slot.voteChangableDelay,
-            slot.voteModule
-        ) = (
-            proposalQuorum,
-            voteQuorum,
-            emergencyQuorum,
-            voteStartDelay,
-            votePeriod,
-            voteChangableDelay,
-            voteModuleAddr
-        );
-    }
-
-    /**
-     * @notice 컨트랙트를 초기화 하기 위한 함수이며, 단 한 번만 실행이 가능합니다.
-     * @param voteModuleAddr IModule을 구현하고 있는 모듈 컨트랙트 주소
-     * @param proposalQuorum 제안서를 만들기 위한 제안 임계 백분율, 최대 10000
-     * 긴급 제안서 만들기 위한 임계값?
-     * @param emergencyQuorum 긴급 제안서를 통과 시키기 위한 임계 백분율, 최대 10000
-     * @param voteQuorum 제안서를 통과시키기 위한 임계 백분율, 최대 10000
-     * @param voteStartDelay 제안서의 투표 시작 지연 값, 단위 일
-     * @param votePeriod 제안서의 투표 기간, 단위 일
-     * @param voteChangableDelay 투표를 변경할 때 지연 값, 단위 일
-     */
-    function initialize(
-        address voteModuleAddr,
-        bytes calldata voteModuleData,
-        uint16 proposalQuorum,
-        uint16 voteQuorum,
-        uint16 emergencyQuorum,
-        uint16 voteStartDelay,
-        uint16 votePeriod,
-        uint16 voteChangableDelay
-    ) external initializer {
-        require(IERC165(voteModuleAddr).supportsInterface(type(IModule).interfaceId));
-        require(proposalQuorum <= 1e4);
-        require(voteQuorum <= 1e4);
-        require(emergencyQuorum <= 1e4);
-        (bool success, ) = voteModuleAddr.delegatecall(voteModuleData);
-        require(success);
-        (
-            slot.proposalQuorum,
-            slot.voteQuorum,
-            slot.emergencyQuorum,
-            slot.voteStartDelay,
-            slot.votePeriod,
-            slot.voteChangableDelay,
-            slot.voteModule
-        ) = (
-            proposalQuorum,
-            voteQuorum,
-            emergencyQuorum,
-            voteStartDelay,
-            votePeriod,
-            voteChangableDelay,
-            voteModuleAddr
-        );
+            slot.voteChangableDelay
+        ) = (proposalQuorum, voteQuorum, emergencyQuorum, voteStartDelay, votePeriod, voteChangableDelay);
     }
 
     /**
      * @notice 현재 컨트랙트에서 일치하지 않는 인터페이스를 voteModule로 이관하기 위한
      */
     fallback() external payable {
-        address module = slot.voteModule;
+        address module = voteModule;
         assembly {
             // copy function selector and any arguments
             calldatacopy(0, 0, calldatasize())
@@ -157,6 +95,11 @@ contract Council is IERC165, ICouncil, Initializer {
         revert();
     }
 
+    function initialVoteModule(address voteModuleAddr) external {
+        if (voteModule != address(0)) revert();
+        voteModule = voteModuleAddr;
+    }
+
     /**
      * @notice 거버넌스로 제안서를 보내는 역할을 하며, 해당 컨트랙트에서도 투표만을 위한 제안서를 동일하게 생성한다.
      * @param governance Council이 목표로 하는 거버넌스 컨트랙트 주소
@@ -174,8 +117,8 @@ contract Council is IERC165, ICouncil, Initializer {
             revert Council__NotReachedQuorum();
 
         // 투표 시작 지연 추가
-        uint32 start = uint32(block.timestamp) + toSecond(s.voteStartDelay);
-        uint32 end = start + toSecond(s.votePeriod);
+        uint32 start = uint32(block.timestamp) + s.voteStartDelay;
+        uint32 end = start + s.votePeriod;
         // 거버넌스에 등록할 proposal 정보
         IGovernance.ProposalParams memory params = IGovernance.ProposalParams({
             proposer: msg.sender,
@@ -239,7 +182,7 @@ contract Council is IERC165, ICouncil, Initializer {
             p.totalVotes += uint96(power);
         } else {
             // 투표 변경 딜레이 확인
-            if ((v.ts + toSecond(slot.voteChangableDelay)) > uint32(block.timestamp)) revert Council__NotReachedDelay();
+            if ((v.ts + slot.voteChangableDelay) > uint32(block.timestamp)) revert Council__NotReachedDelay();
             if (!support ? p.nay > 0 : p.yea > 0) revert Council__AlreadyVoted(proposalId, support);
             // 새로운 타임스탬프 기록
             v.ts = uint32(block.timestamp);
@@ -299,9 +242,13 @@ contract Council is IERC165, ICouncil, Initializer {
         }
     }
 
-    function toSecond(uint16 day) internal pure returns (uint32 second) {
-        unchecked {
-            second = 60 * 60 * 24 * day;
+    function name() public pure returns (string memory) {
+        // Council
+        // solhint-disable-next-line no-inline-assembly
+        assembly {
+            mstore(0x20, 0x20)
+            mstore(0x4c, 0x07436f756e63696c)
+            return(0x20, 0x60)
         }
     }
 }

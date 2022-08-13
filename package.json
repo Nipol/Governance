@@ -30,6 +30,7 @@
     "hardhat": "^2.9.0",
     "hardhat-deploy": "^0.9.23",
     "hardhat-gas-reporter": "^1.0.6",
+    "hardhat-preprocessor": "^0.1.4",
     "http-server": "^0.12.3",
     "keccak256": "^1.0.6",
     "merkletreejs": "^0.2.27",

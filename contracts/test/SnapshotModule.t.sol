@@ -15,39 +15,28 @@ import {SnapshotModule} from "../VoteModule/SnapshotModule.sol";
  * @notice 카운슬을 배포하는데 사용합니다
  */
 abstract contract ZeroState is Test {
+    uint16 proposalQuorum = 1000; // 10%
+    uint16 voteQuorum = 7000; // 70%
+    uint16 emergencyQuorum = 9500; // 95%
+    uint32 voteStartDelay = 0; // 투표 시작 딜레이 0일
+    uint32 votePeriod = 604800; // 투표 기간 7일
+    uint32 voteChangableDelay = 345600; // 투표 변경 가능한 기간 4일
+
     Council public c;
     StandardToken token0;
     StandardToken token1;
     SnapshotModule snapModule;
 
     function setUp() public virtual {
+        c = new Council(proposalQuorum, voteQuorum, emergencyQuorum, voteStartDelay, votePeriod, voteChangableDelay);
+        vm.label(address(c), "Council");
+
         token0 = new StandardToken("bean the token", "BEAN", 18);
         token1 = new StandardToken("Wrapped Ether", "WETH", 18);
 
-        snapModule = new SnapshotModule(abi.encode(address(token0)));
+        snapModule = new SnapshotModule(address(c), address(token0));
 
-        uint16 proposalQuorum = 1000;
-        uint16 voteQuorum = 7000;
-        uint16 emergencyQuorum = 9500;
-        uint16 voteStartDelay = 0; // 투표 시작 딜레이 0일
-        uint16 votePeriod = 7; // 투표 기간 7일
-        uint16 voteChangableDelay = 4; // 투표 변경 가능한 기간 4일
-
-        bytes memory voteModuleData = abi.encodeWithSignature("initialize(bytes)", abi.encode(address(token0)));
-
-        Council tc = new Council(
-            address(snapModule),
-            voteModuleData,
-            proposalQuorum,
-            voteQuorum,
-            emergencyQuorum,
-            voteStartDelay,
-            votePeriod,
-            voteChangableDelay
-        );
-        Deployer d = new Deployer(address(tc));
-
-        c = Council(payable(d.deployIncrement()));
+        c.initialVoteModule(address(snapModule));
 
         vm.label(address(c), "Council");
         vm.label(address(this), "Caller");
@@ -58,70 +47,13 @@ abstract contract ZeroState is Test {
 
 contract SnapshotModuleTest is ZeroState {
     function testSnapshotModule__initialize() public {
-        uint16 proposalQuorum = 1000;
-        uint16 voteQuorum = 7000;
-        uint16 emergencyQuorum = 9500;
-        uint16 voteStartDelay = 0; // 투표 시작 딜레이 0일
-        uint16 votePeriod = 7; // 투표 기간 7일
-        uint16 voteChangableDelay = 4; // 투표 변경 가능한 기간 4일
-
-        bytes memory voteModuleData = abi.encodeWithSignature("initialize(bytes)", abi.encode(address(token0)));
-
-        c.initialize(
-            address(snapModule),
-            voteModuleData,
-            proposalQuorum,
-            voteQuorum,
-            emergencyQuorum,
-            voteStartDelay,
-            votePeriod,
-            voteChangableDelay
-        );
-
         assertEq(SnapshotModule(address(c)).getToken(), address(token0));
-        assertTrue(SnapshotModule(address(c)).isInitialized());
-    }
-
-    function testSnapshotModule__TwiceInitialize() public {
-        // module addr, set to council
-        vm.store(address(c), bytes32(uint256(0x1)), 0xefc56627233b02ea95bae7e19f648d7dcd5bb132000000000000000000000000);
-
-        // initialized state, set to council using module slot
-        vm.store(
-            address(c),
-            keccak256("eth.dao.bean.stakemodule.snapshot"),
-            0x0000000000000000000000ce71065d4017f316ec606fe4422e11eb2c47c24601
-        );
-
-        (bool success, ) = address(c).call(abi.encodeWithSignature("initialize(bytes)", abi.encode(token0)));
-        assertTrue(!success);
     }
 }
 
 abstract contract SnapshotModule__initialized is ZeroState {
     function setUp() public virtual override {
         super.setUp();
-
-        uint16 proposalQuorum = 1000;
-        uint16 voteQuorum = 7000;
-        uint16 emergencyQuorum = 9500;
-        uint16 voteStartDelay = 0;
-        uint16 votePeriod = 5;
-        uint16 voteChangableDelay = 10;
-
-        bytes memory voteModuleData = abi.encodeWithSignature("initialize(bytes)", abi.encode(address(token0)));
-
-        c.initialize(
-            address(snapModule),
-            voteModuleData,
-            proposalQuorum,
-            voteQuorum,
-            emergencyQuorum,
-            voteStartDelay,
-            votePeriod,
-            voteChangableDelay
-        );
-
         token0.mint(100e18);
         token0.approve(address(c), 100e18);
 

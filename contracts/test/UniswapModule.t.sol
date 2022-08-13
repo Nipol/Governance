@@ -8,69 +8,90 @@ import "../Council.sol";
 import "../mocks/Deployer.sol";
 import "../mocks/GovernanceMock.sol";
 import "../mocks/ERC20.sol";
+import "../mocks/ProxyMock.sol";
 
 import {UniswapModule, Math, TickMath} from "../VoteModule/UniswapModule.sol";
 
-import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
+import "UniswapV3Pack/v3-core/interfaces/IUniswapV3Pool.sol";
+import "UniswapV3Pack/v3-core/interfaces/IUniswapV3Factory.sol";
+import "UniswapV3Pack/v3-periphery/interfaces/ISwapRouter.sol";
+
+contract UniswapModuleExistPoolTest {
+    address public constant UNIV3_FACTORY = 0x1F98431c8aD98523631AE4a59f267346ea31F984;
+    uint24 constant fee = 3000;
+    StandardToken token0;
+    StandardToken token1;
+    UniswapModule uniModule;
+
+    uint160 initialPrice;
+    uint160 upperPrice;
+    int24 lowerTick;
+    int24 upperTick;
+
+    function setUp() public {
+        token0 = new StandardToken("bean the token", "BEAN", 18);
+        token1 = new StandardToken("Wrapped Ether", "WETH", 18);
+        initialPrice = Math.encodePriceSqrt(address(token0), address(token1), 1e18, 0.01 ether);
+
+        address pool = IUniswapV3Factory(UNIV3_FACTORY).createPool(address(token0), address(token1), fee);
+        IUniswapV3Pool(pool).initialize(initialPrice);
+
+        // 베이스 토큰의 최대 가격을 pair를 통해서 설정합니다.
+        upperPrice = Math.encodePriceSqrt(address(token0), address(token1), 1e18, 10 ether);
+
+        // 최소 tick과 최대 tick
+        lowerTick =
+            TickMath.getTickAtSqrtRatio(initialPrice) +
+            (address(token0) > address(token1) ? int24(-60) : int24(60));
+        upperTick = TickMath.getTickAtSqrtRatio(upperPrice);
+
+        if (lowerTick > upperTick) {
+            (lowerTick, upperTick) = (upperTick, lowerTick);
+        }
+    }
+
+    function testExistedPool() public {
+        uniModule = new UniswapModule(
+            address(0),
+            address(token0),
+            address(token1),
+            3000,
+            initialPrice,
+            lowerTick,
+            upperTick,
+            7 days
+        );
+    }
+}
 
 /**
- * @notice 카운슬을 배포하는데 사용합니다
+ * @notice 유니스왑 모듈을 배포하는데 사용됩니다.
  */
 abstract contract ZeroState is Test {
     address public constant UNIV3_ROUTER = 0xE592427A0AEce92De3Edee1F18E0157C05861564;
     uint24 constant fee = 3000;
 
+    uint16 proposalQuorum = 1000; // 10%
+    uint16 voteQuorum = 7000; // 70%
+    uint16 emergencyQuorum = 9500; // 95%
+    uint32 voteStartDelay = 0; // 투표 시작 딜레이 0일
+    uint32 votePeriod = 604800; // 투표 기간 7일
+    uint32 voteChangableDelay = 345600; // 투표 변경 가능한 기간 4일
+
     Council public c;
     StandardToken token0;
     StandardToken token1;
     UniswapModule uniModule;
+    address pm;
     address base;
 
     function setUp() public virtual {
+        c = new Council(proposalQuorum, voteQuorum, emergencyQuorum, voteStartDelay, votePeriod, voteChangableDelay);
+        vm.label(address(c), "Council");
+
         token0 = new StandardToken("bean the token", "BEAN", 18);
         token1 = new StandardToken("Wrapped Ether", "WETH", 18);
-
-        uniModule = new UniswapModule();
-
-        uint16 proposalQuorum = 1000;
-        uint16 voteQuorum = 7000;
-        uint16 emergencyQuorum = 9500;
-        uint16 voteStartDelay = 0; // 투표 시작 딜레이 0일
-        uint16 votePeriod = 7; // 투표 기간 7일
-        uint16 voteChangableDelay = 4; // 투표 변경 가능한 기간 4일
-
-        bytes memory voteModuleData = new bytes(0);
-
-        Council tc = new Council(
-            address(uniModule),
-            voteModuleData,
-            proposalQuorum,
-            voteQuorum,
-            emergencyQuorum,
-            voteStartDelay,
-            votePeriod,
-            voteChangableDelay
-        );
-        Deployer d = new Deployer(address(tc));
-
-        c = Council(payable(d.deployIncrement()));
-
-        vm.label(address(c), "Council");
-        vm.label(address(this), "Caller");
-        vm.label(address(token0), "BaseToken");
-        vm.label(address(token1), "PairToken");
         base = address(token0);
-    }
-}
-
-contract UniswapModuleTest is ZeroState {
-    function testUniswapModule__initialize() public {
-        uint16 proposalQuorum = 1000;
-        uint16 voteQuorum = 7000;
-        uint16 emergencyQuorum = 9500;
-        uint16 voteStartDelay = 0;
-        uint16 votePeriod = 5;
-        uint16 voteChangableDelay = 10;
 
         // 베이스 토큰의 초기 가격을 pair를 통해서 설정합니다.
         uint160 initialPrice = Math.encodePriceSqrt(address(token0), address(token1), 1e18, 0.01 ether);
@@ -78,73 +99,57 @@ contract UniswapModuleTest is ZeroState {
         // 베이스 토큰의 최대 가격을 pair를 통해서 설정합니다.
         uint160 upperPrice = Math.encodePriceSqrt(address(token0), address(token1), 1e18, 10 ether);
 
+        // 최소 tick과 최대 tick
         int24 lowerTick = TickMath.getTickAtSqrtRatio(initialPrice) +
             (address(token0) > address(token1) ? int24(-60) : int24(60));
         int24 upperTick = TickMath.getTickAtSqrtRatio(upperPrice);
 
-        // token0, token1, uniswap fee, initialPrice, lowerTick, upperTick, undelegatePeriod
-        bytes memory voteModuleData = abi.encodeWithSignature(
-            "initialize(bytes)",
-            abi.encode(address(token0), address(token1), 3000, initialPrice, lowerTick, upperTick, 10 days)
+        if (lowerTick > upperTick) {
+            (lowerTick, upperTick) = (upperTick, lowerTick);
+        }
+
+        uniModule = new UniswapModule(
+            address(c),
+            address(token0),
+            address(token1),
+            3000,
+            initialPrice,
+            lowerTick,
+            upperTick,
+            7 days
         );
 
-        c.initialize(
-            address(uniModule),
-            voteModuleData,
-            proposalQuorum,
-            voteQuorum,
-            emergencyQuorum,
-            voteStartDelay,
-            votePeriod,
-            voteChangableDelay
-        );
+        c.initialVoteModule(address(uniModule));
 
-        assertEq(
-            UniswapModule(address(c)).getToken0(),
-            address(token0) > address(token1) ? address(token1) : address(token0)
-        );
-        assertEq(
-            UniswapModule(address(c)).getToken1(),
-            address(token0) > address(token1) ? address(token0) : address(token1)
-        );
+        vm.label(address(this), "Caller");
+        vm.label(address(token0), "BaseToken");
+        vm.label(address(token1), "PairToken");
+        vm.label(address(uniModule), "UniswapModule");
     }
 }
 
-abstract contract UniswapModule__initialized is ZeroState {
+contract UniswapModuleDeployTest is ZeroState {
+    function setUp() public override {
+        super.setUp();
+        pm = address(new ProxyMock(address(uniModule)));
+    }
+
+    function testInitialized() public {
+        (address _token0, address _token1) = UniswapModule(address(c)).getTokens();
+        assertEq(_token0, address(token0) > address(token1) ? address(token1) : address(token0));
+        assertEq(_token1, address(token0) > address(token1) ? address(token0) : address(token1));
+    }
+
+    function testInitializedFromProxy() public {
+        vm.expectRevert();
+        UniswapModule(pm).getTokens();
+    }
+}
+
+abstract contract LinkState is ZeroState {
     function setUp() public virtual override {
         super.setUp();
-
-        uint16 proposalQuorum = 1000;
-        uint16 voteQuorum = 7000;
-        uint16 emergencyQuorum = 9500;
-        uint16 voteStartDelay = 0;
-        uint16 votePeriod = 5;
-        uint16 voteChangableDelay = 10;
-
-        // 1 token : 0.01 ~ 0.00001
-        uint160 initialPrice = Math.encodePriceSqrt(address(token0), address(token1), 1e18, 0.01 ether);
-        uint160 upperPrice = Math.encodePriceSqrt(address(token0), address(token1), 1e18, 10 ether);
-        // fee 0.3% with move to 1 tick upper
-        int24 lowerTick = TickMath.getTickAtSqrtRatio(initialPrice) +
-            (address(token0) > address(token1) ? int24(-60) : int24(60));
-        int24 upperTick = TickMath.getTickAtSqrtRatio(upperPrice);
-
-        // token0, token1, uniswap fee, initialPrice, lowerTick, upperTick, undelegatePeriod
-        bytes memory voteModuleData = abi.encodeWithSignature(
-            "initialize(bytes)",
-            abi.encode(address(token0), address(token1), 3000, initialPrice, lowerTick, upperTick, 10 days)
-        );
-
-        c.initialize(
-            address(uniModule),
-            voteModuleData,
-            proposalQuorum,
-            voteQuorum,
-            emergencyQuorum,
-            voteStartDelay,
-            votePeriod,
-            voteChangableDelay
-        );
+        pm = address(new ProxyMock(address(uniModule)));
 
         token0.mint(101e18);
         token0.approve(address(c), type(uint256).max);
@@ -153,13 +158,18 @@ abstract contract UniswapModule__initialized is ZeroState {
         token1.mint(10e18);
         token1.approve(address(c), type(uint256).max);
         token1.approve(UNIV3_ROUTER, type(uint256).max);
+
+        address pool = UniswapModule(address(c)).pool();
+        vm.label(pool, "Uniswap Pool");
+        vm.label(0x1F98431c8aD98523631AE4a59f267346ea31F984, "Uniswap Factory");
+        vm.label(0xE592427A0AEce92De3Edee1F18E0157C05861564, "Uniswap Router");
     }
 }
 
-contract UniswapModuleTest__Stake is UniswapModule__initialized {
-    function testStake__initial__SingleToken() public {
-        bool isToken0Base = base == UniswapModule(address(c)).getToken0();
-        bool isToken1Base = base == UniswapModule(address(c)).getToken1();
+contract UniswapModuleLinkTest is LinkState {
+    function testStake__BaseToken() public {
+        (address _token0, ) = UniswapModule(address(c)).getTokens();
+        (bool isToken0Base, bool isToken1Base) = base == _token0 ? (true, false) : (false, true);
 
         UniswapModule(address(c)).stake(
             UniswapModule.StakeParam({
@@ -191,9 +201,9 @@ contract UniswapModuleTest__Stake is UniswapModule__initialized {
         // );
     }
 
-    function testStake__initial__PairToken() public {
-        bool isToken0Base = base == UniswapModule(address(c)).getToken0();
-        bool isToken1Base = base == UniswapModule(address(c)).getToken1();
+    function testStake__PairToken() public {
+        (address _token0, ) = UniswapModule(address(c)).getTokens();
+        (bool isToken0Base, bool isToken1Base) = base == _token0 ? (true, false) : (false, true);
 
         vm.expectRevert();
         UniswapModule(address(c)).stake(
@@ -208,11 +218,11 @@ contract UniswapModuleTest__Stake is UniswapModule__initialized {
     }
 }
 
-abstract contract UniswapModule__Staked is UniswapModule__initialized {
+abstract contract StakedState is LinkState {
     function setUp() public virtual override {
         super.setUp();
-        bool isToken0Base = base == UniswapModule(address(c)).getToken0();
-        bool isToken1Base = base == UniswapModule(address(c)).getToken1();
+        (address _token0, ) = UniswapModule(address(c)).getTokens();
+        (bool isToken0Base, bool isToken1Base) = base == _token0 ? (true, false) : (false, true);
 
         UniswapModule(address(c)).stake(
             UniswapModule.StakeParam({
@@ -226,10 +236,10 @@ abstract contract UniswapModule__Staked is UniswapModule__initialized {
     }
 }
 
-contract UniswapModuleTest__GetSingleSidedAmount is UniswapModule__Staked {
+contract UniswapModuleStakedTest is StakedState {
     function testCalculatePairAmountForSwap() public {
-        bool isToken0Base = base == UniswapModule(address(c)).getToken0();
-
+        (address _token0, ) = UniswapModule(address(c)).getTokens();
+        (bool isToken0Base, ) = base == _token0 ? (true, false) : (false, true);
         // Add liquidity Single Side with PairToken
         uint256 amountIn = 10e18;
         (, uint256 amountForSwap) = UniswapModule(address(c)).getSingleSidedAmount(
@@ -247,16 +257,12 @@ contract UniswapModuleTest__GetSingleSidedAmount is UniswapModule__Staked {
         //         isAmountIn0: isToken0Base ? false : true
         //     })
         // );
-
         // bool isToken0Base = address(token1) > address(token0);
         // (address base, address pair) = isToken0Base
         //     ? (address(token0), address(token1))
         //     : (address(token1), address(token0));
-
         // address pool = UniswapModule(address(c)).getPool();
-
         // ISwapRouter v3router = ISwapRouter(UNIV3_ROUTER);
-
         // // Exact Input pair -> base
         // uint256 tokenBaseOut = v3router.exactInput(
         //     ISwapRouter.ExactInputParams({
@@ -267,13 +273,10 @@ contract UniswapModuleTest__GetSingleSidedAmount is UniswapModule__Staked {
         //         amountOutMinimum: 0
         //     })
         // );
-
         // UniswapModule(address(c)).stake(tokenBaseOut, amountIn - amountForSwap, 0, 0);
-
         // // Add liquidity Single Side with BaseToken
         // amountIn = 1e18;
         // (liquidity, amountForSwap) = UniswapModule(address(c)).getSingleSidedAmount(amountIn, true);
-
         // // Exact Input pair -> base
         // tokenBaseOut = v3router.exactInput(
         //     ISwapRouter.ExactInputParams({
@@ -284,35 +287,24 @@ contract UniswapModuleTest__GetSingleSidedAmount is UniswapModule__Staked {
         //         amountOutMinimum: 0
         //     })
         // );
-
         // // 토큰을 어떤 걸 넣는지에 따라 순서 조정되면 됨.
         // UniswapModule(address(c)).stake(amountIn - amountForSwap, tokenBaseOut, 0, 0);
-
         // emit log_named_uint("token0 balanceOf(this)", token0.balanceOf(address(this)));
         // emit log_named_uint("token1 balanceOf(this)", token1.balanceOf(address(this)));
-
         // emit log_named_uint("token0 balanceOf(Pool)", token0.balanceOf(pool));
         // emit log_named_uint("token1 balanceOf(Pool)", token1.balanceOf(pool));
     }
-}
 
-abstract contract UniswapModule__StoredSingleSidedAmount is UniswapModule__Staked {
-    uint256 amountForSwap;
-    uint256 amountIn;
-    bool isToken0Base;
-
-    function setUp() public virtual override {
-        super.setUp();
-        isToken0Base = base == UniswapModule(address(c)).getToken0();
+    function testSingleSidedStake__PairToken() public {
+        uint256 amountForSwap;
+        uint256 amountIn;
+        (address _token0, ) = UniswapModule(address(c)).getTokens();
+        (bool isToken0Base, ) = base == _token0 ? (true, false) : (false, true);
         amountIn = 10e18;
 
         // Add liquidity Single Side with PairToken
         (, amountForSwap) = UniswapModule(address(c)).getSingleSidedAmount(amountIn, isToken0Base ? false : true);
-    }
-}
 
-contract UniswapModuleTest__StakeSigleSideToken is UniswapModule__StoredSingleSidedAmount {
-    function testStake__SingleSidedPairToken() public {
         UniswapModule(address(c)).stake(
             UniswapModule.StakeSingleParam({
                 amountIn: amountIn,
@@ -323,14 +315,17 @@ contract UniswapModuleTest__StakeSigleSideToken is UniswapModule__StoredSingleSi
             })
         );
 
-        address pool = UniswapModule(address(c)).getPool();
+        address pool = UniswapModule(address(c)).pool();
         emit log_named_uint("token0 balanceOf(this)", token0.balanceOf(address(this)));
         emit log_named_uint("token1 balanceOf(this)", token1.balanceOf(address(this)));
         emit log_named_uint("token0 balanceOf(Pool)", token0.balanceOf(pool));
         emit log_named_uint("token1 balanceOf(Pool)", token1.balanceOf(pool));
     }
 
-    function testStake__SingleSidedBaseToken() public {
+    function testSingleSidedStake__BaseToken() public {
+        (address _token0, ) = UniswapModule(address(c)).getTokens();
+        (bool isToken0Base, ) = base == _token0 ? (true, false) : (false, true);
+
         vm.expectRevert(bytes("AS"));
         UniswapModule(address(c)).stake(
             UniswapModule.StakeSingleParam({
@@ -342,7 +337,7 @@ contract UniswapModuleTest__StakeSigleSideToken is UniswapModule__StoredSingleSi
             })
         );
 
-        address pool = UniswapModule(address(c)).getPool();
+        address pool = UniswapModule(address(c)).pool();
         emit log_named_uint("token0 balanceOf(this)", token0.balanceOf(address(this)));
         emit log_named_uint("token1 balanceOf(this)", token1.balanceOf(address(this)));
         emit log_named_uint("token0 balanceOf(Pool)", token0.balanceOf(pool));
@@ -350,14 +345,14 @@ contract UniswapModuleTest__StakeSigleSideToken is UniswapModule__StoredSingleSi
     }
 }
 
-abstract contract UniswapModule__StakedAndSwapped is UniswapModule__Staked {
+abstract contract SwapState is StakedState {
     uint256 amountForSwap;
     uint256 amountIn;
-    bool isToken0Base;
 
     function setUp() public virtual override {
         super.setUp();
-        isToken0Base = base == UniswapModule(address(c)).getToken0();
+        (address _token0, ) = UniswapModule(address(c)).getTokens();
+        (bool isToken0Base, ) = base == _token0 ? (true, false) : (false, true);
         amountIn = 10e18;
 
         (, amountForSwap) = UniswapModule(address(c)).getSingleSidedAmount(amountIn, isToken0Base ? false : true);
@@ -374,9 +369,9 @@ abstract contract UniswapModule__StakedAndSwapped is UniswapModule__Staked {
     }
 }
 
-contract UniswapModuleTest__Unstake is UniswapModule__StakedAndSwapped {
+contract UniswapModuleSwappedTest is SwapState {
     function testUnstake() public {
-        address pool = UniswapModule(address(c)).getPool();
+        address pool = UniswapModule(address(c)).pool();
         emit log_named_uint("token0 balanceOf(this)", token0.balanceOf(address(this)));
         emit log_named_uint("token1 balanceOf(this)", token1.balanceOf(address(this)));
         emit log_named_uint("token0 balanceOf(Pool)", token0.balanceOf(pool));
@@ -393,7 +388,7 @@ contract UniswapModuleTest__Unstake is UniswapModule__StakedAndSwapped {
     }
 
     function testUnstake__halfAmount() public {
-        address pool = UniswapModule(address(c)).getPool();
+        address pool = UniswapModule(address(c)).pool();
         emit log_named_uint("token0 balanceOf(this)", token0.balanceOf(address(this)));
         emit log_named_uint("token1 balanceOf(this)", token1.balanceOf(address(this)));
         emit log_named_uint("token0 balanceOf(Pool)", token0.balanceOf(pool));
@@ -415,115 +410,115 @@ contract UniswapModuleTest__Unstake is UniswapModule__StakedAndSwapped {
     }
 }
 
-// contract CouncilTest is DSTest {
-//     uint256 constant PRECISION = 2**96;
+// // contract CouncilTest is DSTest {
+// //     uint256 constant PRECISION = 2**96;
 
-//     HEVM vm = HEVM(HEVM_ADDRESS);
-//     Council c;
-//     V3LiquidityModule uniModule;
-//     GovernanceMock g;
+// //     HEVM vm = HEVM(HEVM_ADDRESS);
+// //     Council c;
+// //     V3LiquidityModule uniModule;
+// //     GovernanceMock g;
 
-//     function setUp() public {
-//         Council tc = new Council();
-//         Deployer d = new Deployer(address(tc));
-//         uniModule = new V3LiquidityModule();
-//         c = Council(payable(d.deployIncrement()));
-//         vm.label(address(c), "Council");
-//         vm.label(address(this), "caller");
-//     }
+// //     function setUp() public {
+// //         Council tc = new Council();
+// //         Deployer d = new Deployer(address(tc));
+// //         uniModule = new V3LiquidityModule();
+// //         c = Council(payable(d.deployIncrement()));
+// //         vm.label(address(c), "Council");
+// //         vm.label(address(this), "caller");
+// //     }
 
-//     function testInitializeWithUniswapModule() public {
-//         StandardToken token0 = new StandardToken("bean the token", "BEAN", 18);
-//         StandardToken token1 = new StandardToken("SAMPLE", "SMP", 18);
+// //     function testInitializeWithUniswapModule() public {
+// //         StandardToken token0 = new StandardToken("bean the token", "BEAN", 18);
+// //         StandardToken token1 = new StandardToken("SAMPLE", "SMP", 18);
 
-//         // 1 token : 0.01 ~ 0.00001
-//         uint160 initialPrice = Math.encodePriceSqrt(address(token0), address(token1), 1e18, 0.01 ether);
-//         uint160 upperPrice = Math.encodePriceSqrt(address(token0), address(token1), 1e18, 0.00001 ether);
-//         // fee 0.3% with move to 1 tick upper
-//         int24 lowerTick = (TickMath.getTickAtSqrtRatio(initialPrice)) + 1;
-//         int24 upperTick = TickMath.getTickAtSqrtRatio(upperPrice);
+// //         // 1 token : 0.01 ~ 0.00001
+// //         uint160 initialPrice = Math.encodePriceSqrt(address(token0), address(token1), 1e18, 0.01 ether);
+// //         uint160 upperPrice = Math.encodePriceSqrt(address(token0), address(token1), 1e18, 0.00001 ether);
+// //         // fee 0.3% with move to 1 tick upper
+// //         int24 lowerTick = (TickMath.getTickAtSqrtRatio(initialPrice)) + 1;
+// //         int24 upperTick = TickMath.getTickAtSqrtRatio(upperPrice);
 
-//         // 토큰0, 토큰 1, 수수료, 토큰0을 기준 초기 가격, 틱 시작, 틱 종료, undelegate 기간
-//         bytes memory voteModuleData = abi.encodeWithSignature(
-//             "initialize(bytes)",
-//             abi.encode(address(token0), address(token1), 3000, initialPrice, lowerTick, upperTick, 10 days)
-//         );
+// //         // 토큰0, 토큰 1, 수수료, 토큰0을 기준 초기 가격, 틱 시작, 틱 종료, undelegate 기간
+// //         bytes memory voteModuleData = abi.encodeWithSignature(
+// //             "initialize(bytes)",
+// //             abi.encode(address(token0), address(token1), 3000, initialPrice, lowerTick, upperTick, 10 days)
+// //         );
 
-//         uint16 proposalQuorum = 1000;
-//         uint16 voteQuorum = 7000;
-//         uint16 emergencyQuorum = 9500;
-//         uint16 voteStartDelay = 0;
-//         uint16 votePeriod = 5;
-//         uint16 voteChangableDelay = 10;
+// //         uint16 proposalQuorum = 1000;
+// //         uint16 voteQuorum = 7000;
+// //         uint16 emergencyQuorum = 9500;
+// //         uint16 voteStartDelay = 0;
+// //         uint16 votePeriod = 5;
+// //         uint16 voteChangableDelay = 10;
 
-//         c.initialize(
-//             address(uniModule),
-//             voteModuleData,
-//             proposalQuorum,
-//             voteQuorum,
-//             emergencyQuorum,
-//             voteStartDelay,
-//             votePeriod,
-//             voteChangableDelay
-//         );
-//     }
+// //         c.initialize(
+// //             address(uniModule),
+// //             voteModuleData,
+// //             proposalQuorum,
+// //             voteQuorum,
+// //             emergencyQuorum,
+// //             voteStartDelay,
+// //             votePeriod,
+// //             voteChangableDelay
+// //         );
+// //     }
 
-//     function testInitializeWithUniswapModuleAndStake() public {
-//         StandardToken token0 = new StandardToken("bean the token", "BEAN", 18);
-//         StandardToken token1 = new StandardToken("SAMPLE", "SMP", 18);
-//         vm.label(address(token0), "token 0");
-//         vm.label(address(token1), "token 1");
+// //     function testInitializeWithUniswapModuleAndStake() public {
+// //         StandardToken token0 = new StandardToken("bean the token", "BEAN", 18);
+// //         StandardToken token1 = new StandardToken("SAMPLE", "SMP", 18);
+// //         vm.label(address(token0), "token 0");
+// //         vm.label(address(token1), "token 1");
 
-//         // 1 token : 0.01 ~ 0.00001
-//         uint160 initialPrice = Math.encodePriceSqrt(address(token0), address(token1), 1e18, 0.01 ether);
-//         uint160 upperPrice = Math.encodePriceSqrt(address(token0), address(token1), 1e18, 0.00001 ether);
-//         // fee 0.3% with move to 1 tick upper
-//         int24 lowerTick = TickMath.getTickAtSqrtRatio(initialPrice) + 60;
-//         int24 upperTick = TickMath.getTickAtSqrtRatio(upperPrice);
+// //         // 1 token : 0.01 ~ 0.00001
+// //         uint160 initialPrice = Math.encodePriceSqrt(address(token0), address(token1), 1e18, 0.01 ether);
+// //         uint160 upperPrice = Math.encodePriceSqrt(address(token0), address(token1), 1e18, 0.00001 ether);
+// //         // fee 0.3% with move to 1 tick upper
+// //         int24 lowerTick = TickMath.getTickAtSqrtRatio(initialPrice) + 60;
+// //         int24 upperTick = TickMath.getTickAtSqrtRatio(upperPrice);
 
-//         // 토큰0, 토큰 1, 수수료, 토큰0을 기준 초기 가격, 틱 시작, 틱 종료, undelegate 기간
-//         bytes memory voteModuleData = abi.encodeWithSignature(
-//             "initialize(bytes)",
-//             abi.encode(address(token0), address(token1), 3000, initialPrice, lowerTick, upperTick, 10 days)
-//         );
+// //         // 토큰0, 토큰 1, 수수료, 토큰0을 기준 초기 가격, 틱 시작, 틱 종료, undelegate 기간
+// //         bytes memory voteModuleData = abi.encodeWithSignature(
+// //             "initialize(bytes)",
+// //             abi.encode(address(token0), address(token1), 3000, initialPrice, lowerTick, upperTick, 10 days)
+// //         );
 
-//         uint16 proposalQuorum = 1000;
-//         uint16 voteQuorum = 7000;
-//         uint16 emergencyQuorum = 9500;
-//         uint16 voteStartDelay = 0;
-//         uint16 votePeriod = 5;
-//         uint16 voteChangableDelay = 10;
+// //         uint16 proposalQuorum = 1000;
+// //         uint16 voteQuorum = 7000;
+// //         uint16 emergencyQuorum = 9500;
+// //         uint16 voteStartDelay = 0;
+// //         uint16 votePeriod = 5;
+// //         uint16 voteChangableDelay = 10;
 
-//         c.initialize(
-//             address(uniModule),
-//             voteModuleData,
-//             proposalQuorum,
-//             voteQuorum,
-//             emergencyQuorum,
-//             voteStartDelay,
-//             votePeriod,
-//             voteChangableDelay
-//         );
+// //         c.initialize(
+// //             address(uniModule),
+// //             voteModuleData,
+// //             proposalQuorum,
+// //             voteQuorum,
+// //             emergencyQuorum,
+// //             voteStartDelay,
+// //             votePeriod,
+// //             voteChangableDelay
+// //         );
 
-//         token0.mint(2e18);
-//         token0.approve(address(c), 2e18);
+// //         token0.mint(2e18);
+// //         token0.approve(address(c), 2e18);
 
-//         token0.mintTo(address(1234), 2e18);
-//         vm.prank(address(1234));
-//         token0.approve(address(c), 2e18);
+// //         token0.mintTo(address(1234), 2e18);
+// //         vm.prank(address(1234));
+// //         token0.approve(address(c), 2e18);
 
-//         V3LiquidityModule(address(c)).stake(1e18, 0, 1e18, 0);
-//         assertEq(V3LiquidityModule(address(c)).balanceOf(address(this)), 10_34135_51279_89261_028);
-//         assertEq(V3LiquidityModule(address(c)).totalSupply(), 10_34135_51279_89261_028);
+// //         V3LiquidityModule(address(c)).stake(1e18, 0, 1e18, 0);
+// //         assertEq(V3LiquidityModule(address(c)).balanceOf(address(this)), 10_34135_51279_89261_028);
+// //         assertEq(V3LiquidityModule(address(c)).totalSupply(), 10_34135_51279_89261_028);
 
-//         vm.prank(address(1234));
-//         V3LiquidityModule(address(c)).stake(2e18, 0, 2e18, 0);
-//         assertEq(V3LiquidityModule(address(c)).balanceOf(address(1234)), 20_68271_02559_78522_056);
-//         assertEq(V3LiquidityModule(address(c)).totalSupply(), 31_02406_53839_67783_084);
+// //         vm.prank(address(1234));
+// //         V3LiquidityModule(address(c)).stake(2e18, 0, 2e18, 0);
+// //         assertEq(V3LiquidityModule(address(c)).balanceOf(address(1234)), 20_68271_02559_78522_056);
+// //         assertEq(V3LiquidityModule(address(c)).totalSupply(), 31_02406_53839_67783_084);
 
-//         vm.prank(address(1234));
-//         V3LiquidityModule(address(c)).unstake(20_68271_02559_78522_056);
+// //         vm.prank(address(1234));
+// //         V3LiquidityModule(address(c)).unstake(20_68271_02559_78522_056);
 
-//         assertEq(token0.balanceOf(address(1234)), 2e18 - 1);
-//     }
-// }
+// //         assertEq(token0.balanceOf(address(1234)), 2e18 - 1);
+// //     }
+// // }

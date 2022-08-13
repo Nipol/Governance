@@ -33,13 +33,11 @@ interface ICouncil {
         // 긴급 제안 통과 비율 - ex) 총 발행량의 95%
         uint16 emergencyQuorum;
         // 투표 시작 지연 기간 - ex) 1일
-        uint16 voteStartDelay;
+        uint32 voteStartDelay;
         // 투표 기간 - ex) 5일
-        uint16 votePeriod;
+        uint32 votePeriod;
         // 투표 변경 가능 period - ex) 2일
-        uint16 voteChangableDelay;
-        // 투표권 모듈 컨트랙트 정보 160bit
-        address voteModule;
+        uint32 voteChangableDelay;
     }
 
     /// @notice 프로포절에 대한 투표 정보 기록
@@ -74,17 +72,6 @@ interface ICouncil {
     event Proposed(bytes32 indexed uid);
     event Voted(address indexed voter, bytes32 indexed uid, uint256 power);
     event Resolved(bytes32 indexed uid);
-
-    function initialize(
-        address voteModuleAddr,
-        bytes calldata voteModuleData,
-        uint16 proposalQuorum,
-        uint16 voteQuorum,
-        uint16 emergencyQuorum,
-        uint16 voteStartDelay,
-        uint16 votePeriod,
-        uint16 voteChangableDelay
-    ) external;
 
     function propose(
         address governance,
