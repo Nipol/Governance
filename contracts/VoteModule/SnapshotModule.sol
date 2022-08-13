@@ -7,59 +7,38 @@ import "@beandao/contracts/interfaces/IERC20.sol";
 import "@beandao/contracts/interfaces/IERC165.sol";
 import "./IModule.sol";
 
-library SnapshotStorage {
-    bytes32 constant POSITION = keccak256("eth.dao.bean.stakemodule.snapshot");
-
+error NotEnoughVotes();
+error NotAllowedAddress(address delegatee);
+contract SnapshotModule is IModule, IERC165 {
     struct Checkpoint {
         uint32 fromBlock;
         uint224 votes;
     }
 
     struct Storage {
-        bool initialized;
-        address token;
         mapping(address => uint256) balances;
         mapping(address => address) delegates;
         mapping(address => Checkpoint[]) checkpoints;
         Checkpoint[] totalCheckpoints;
     }
 
-    function moduleStorage() internal pure returns (Storage storage s) {
-        bytes32 position = POSITION;
-        assembly {
-            s.slot := position
-        }
-    }
-}
-
-contract SnapshotModule is IModule, IERC165 {
-    error NotEnoughVotes();
-    error NotAllowedAddress(address delegatee);
+    bytes32 constant POSITION = keccak256("eth.dao.bean.stakemodule.snapshot");
+    address public immutable council;
+    address public immutable token;
 
     event Delegate(address to, uint256 prevVotes, uint256 nextVotes);
 
-    modifier initializer() {
-        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
-        if (s.initialized) revert();
-        s.initialized = true;
+    modifier onlyDelegateCouncil() {
+        if (address(this) != council) revert();
         _;
     }
 
-    constructor(bytes memory data) {
-        address token = abi.decode(data, (address));
-        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
-        s.token = token;
-    }
-
     /**
-     * @notice 해당 모듈을 초기화
-     * @dev 해당 모듈의 initialized 체크는 하지 않습니다. 해당 모듈은, Council을 통해서만 초기화 되므로
-     * @param data 인코딩된 투표권으로 사용할 토큰 컨트랙트 주소
+     * @param tokenAddr 인코딩된 투표권으로 사용할 토큰 컨트랙트 주소
      */
-    function initialize(bytes calldata data) external initializer {
-        address token = abi.decode(data, (address));
-        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
-        s.token = token;
+    constructor(address councilAddr, address tokenAddr) {
+        council = councilAddr;
+        token = tokenAddr;
     }
 
     /**
@@ -67,8 +46,8 @@ contract SnapshotModule is IModule, IERC165 {
      */
     function stake(uint256 amount) external {
         if (!(amount != 0)) revert();
-        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
-        (address token, address currentDelegatee) = (s.token, s.delegates[msg.sender]);
+        Storage storage s = moduleStorage();
+        address currentDelegatee = s.delegates[msg.sender];
 
         safeTransferFrom(token, msg.sender, address(this), amount);
         unchecked {
@@ -93,12 +72,8 @@ contract SnapshotModule is IModule, IERC165 {
     function stakeWithDelegate(uint256 amount, address delegatee) external {
         if (!(amount != 0)) revert();
         if (delegatee == msg.sender || delegatee == address(0)) revert();
-        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
-        (address token, address currentDelegatee, uint256 latestBalance) = (
-            s.token,
-            s.delegates[msg.sender],
-            s.balances[msg.sender]
-        );
+        Storage storage s = moduleStorage();
+        (address currentDelegatee, uint256 latestBalance) = (s.delegates[msg.sender], s.balances[msg.sender]);
 
         // 추가되는 투표권 카운슬로 전송
         safeTransferFrom(token, msg.sender, address(this), amount);
@@ -131,12 +106,8 @@ contract SnapshotModule is IModule, IERC165 {
         // 수량 0이 들어오는 경우 취소됩니다.
         if (!(amount != 0)) revert();
 
-        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
-        (address token, address currentDelegatee, uint256 latestBalance) = (
-            s.token,
-            s.delegates[msg.sender],
-            s.balances[msg.sender]
-        );
+        Storage storage s = moduleStorage();
+        (address currentDelegatee, uint256 latestBalance) = (s.delegates[msg.sender], s.balances[msg.sender]);
 
         // 현재 위임된 수량 해지.
         delegateVotes(currentDelegatee, address(0), amount);
@@ -162,7 +133,7 @@ contract SnapshotModule is IModule, IERC165 {
      */
     function delegate(address delegatee) external {
         if (delegatee == address(0)) revert NotAllowedAddress(delegatee);
-        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
+        Storage storage s = moduleStorage();
         (address currentDelegate, uint256 latestBalance) = (s.delegates[msg.sender], s.balances[msg.sender]);
 
         if (latestBalance == 0) revert NotEnoughVotes();
@@ -176,8 +147,8 @@ contract SnapshotModule is IModule, IERC165 {
     /**
      * @notice 특정 주소의 리비전에 따른 투표권 정보를 반환합니다.
      */
-    function checkpoints(address account, uint32 pos) public view returns (SnapshotStorage.Checkpoint memory) {
-        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
+    function checkpoints(address account, uint32 pos) public view returns (Checkpoint memory) {
+        Storage storage s = moduleStorage();
         return s.checkpoints[account][pos];
     }
 
@@ -185,7 +156,7 @@ contract SnapshotModule is IModule, IERC165 {
      * @notice 누적된 특정 주소의 투표권 정보 개수를 가져옵니다.
      */
     function numCheckpoints(address account) public view returns (uint32) {
-        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
+        Storage storage s = moduleStorage();
         return uint32(s.checkpoints[account].length);
     }
 
@@ -197,7 +168,7 @@ contract SnapshotModule is IModule, IERC165 {
      */
     function getPriorVotes(address account, uint256 blockNumber) external view returns (uint256 votes) {
         if (blockNumber > block.number) revert();
-        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
+        Storage storage s = moduleStorage();
         votes = _checkpointsLookup(s.checkpoints[account], blockNumber);
     }
 
@@ -209,7 +180,7 @@ contract SnapshotModule is IModule, IERC165 {
      */
     function getPriorRate(address account, uint256 blockNumber) external view returns (uint256 rate) {
         if (blockNumber > block.number) revert();
-        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
+        Storage storage s = moduleStorage();
 
         rate =
             (_checkpointsLookup(s.checkpoints[account], blockNumber) * 1e4) /
@@ -224,7 +195,7 @@ contract SnapshotModule is IModule, IERC165 {
      */
     function getVotesToRate(uint256 votes, uint256 blockNumber) external view returns (uint256 rate) {
         if (blockNumber > block.number) revert();
-        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
+        Storage storage s = moduleStorage();
         rate = (votes * 1e4) / _checkpointsLookup(s.totalCheckpoints, blockNumber);
     }
 
@@ -233,7 +204,7 @@ contract SnapshotModule is IModule, IERC165 {
      */
     function getPriorTotalSupply(uint256 blockNumber) external view returns (uint256 totalVotes) {
         if (blockNumber > block.number) revert();
-        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
+        Storage storage s = moduleStorage();
         totalVotes = _checkpointsLookup(s.totalCheckpoints, blockNumber);
     }
 
@@ -241,7 +212,7 @@ contract SnapshotModule is IModule, IERC165 {
      * @notice 특정 주소의 총 예치 수량을 반환합니다.
      */
     function balanceOf(address target) public view returns (uint256 balance) {
-        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
+        Storage storage s = moduleStorage();
         balance = s.balances[target];
     }
 
@@ -249,7 +220,7 @@ contract SnapshotModule is IModule, IERC165 {
      * @notice 특정 주소의 총 투표권을 반환합니다.
      */
     function voteOf(address target) public view returns (uint256 votes) {
-        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
+        Storage storage s = moduleStorage();
         uint256 length = s.checkpoints[target].length;
         unchecked {
             votes = length != 0 ? s.checkpoints[target][length - 1].votes : 0;
@@ -260,7 +231,7 @@ contract SnapshotModule is IModule, IERC165 {
      * @notice 특정 주소가 투표권을 위임하고 있는 주소를 반환합니다.
      */
     function getDelegate(address target) public view returns (address delegatee) {
-        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
+        Storage storage s = moduleStorage();
         delegatee = s.delegates[target];
     }
 
@@ -268,7 +239,7 @@ contract SnapshotModule is IModule, IERC165 {
      * @notice 현재 총 투표권을 반환합니다.
      */
     function totalSupply() public view returns (uint256 amount) {
-        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
+        Storage storage s = moduleStorage();
         unchecked {
             uint256 length = s.totalCheckpoints.length;
             amount = length != 0 ? s.totalCheckpoints[length - 1].votes : 0;
@@ -278,14 +249,8 @@ contract SnapshotModule is IModule, IERC165 {
     /**
      * @notice 해당 모듈이 사용하는 토큰 주소를 반환합니다.
      */
-    function getToken() public view returns (address token) {
-        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
-        token = s.token;
-    }
-
-    function isInitialized() public view returns (bool) {
-        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
-        return s.initialized;
+    function getToken() public view returns (address) {
+        return token;
     }
 
     /**
@@ -300,7 +265,7 @@ contract SnapshotModule is IModule, IERC165 {
         address to,
         uint256 amount
     ) internal {
-        SnapshotStorage.Storage storage s = SnapshotStorage.moduleStorage();
+        Storage storage s = moduleStorage();
 
         if (from != to && amount != 0) {
             if (from != address(0)) {
@@ -316,7 +281,7 @@ contract SnapshotModule is IModule, IERC165 {
     }
 
     function writeCheckpoint(
-        SnapshotStorage.Checkpoint[] storage ckpts,
+        Checkpoint[] storage ckpts,
         function(uint256, uint256) view returns (uint256) op,
         uint256 delta
     ) internal returns (uint256 oldWeight, uint256 newWeight) {
@@ -327,7 +292,7 @@ contract SnapshotModule is IModule, IERC165 {
         if (length > 0 && ckpts[length - 1].fromBlock == block.number) {
             ckpts[length - 1].votes = uint224(newWeight);
         } else {
-            ckpts.push(SnapshotStorage.Checkpoint({fromBlock: uint32(block.number), votes: uint224(newWeight)}));
+            ckpts.push(Checkpoint({fromBlock: uint32(block.number), votes: uint224(newWeight)}));
         }
     }
 
@@ -415,11 +380,7 @@ contract SnapshotModule is IModule, IERC165 {
         }
     }
 
-    function _checkpointsLookup(SnapshotStorage.Checkpoint[] storage ckpts, uint256 blockNumber)
-        private
-        view
-        returns (uint256 votes)
-    {
+    function _checkpointsLookup(Checkpoint[] storage ckpts, uint256 blockNumber) private view returns (uint256 votes) {
         uint256 high = ckpts.length;
         uint256 low = 0;
         uint256 mid;
@@ -451,5 +412,13 @@ contract SnapshotModule is IModule, IERC165 {
 
     function supportsInterface(bytes4 interfaceID) external pure returns (bool) {
         return interfaceID == type(IModule).interfaceId || interfaceID == type(IERC165).interfaceId;
+    }
+
+    function moduleStorage() internal pure returns (Storage storage s) {
+        bytes32 position = POSITION;
+        // solhint-disable-next-line no-inline-assembly
+        assembly {
+            s.slot := position
+        }
     }
 }

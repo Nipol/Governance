@@ -9,12 +9,6 @@ pragma solidity ^0.8.0;
  */
 interface IModule {
     /**
-     * @notice 해당 모듈을 초기화하기 위한 함수 호출
-     * @param data abi encode된 데이터가 주입되어 각 모듈에 맞게 해석합니다.
-     */
-    function initialize(bytes calldata data) external;
-
-    /**
      * @notice 입력된 블록을 기준하여 주소의 정량적인 투표권을 가져옵니다
      * @param account 대상이 되는 주소
      * @param blockNumber 기반이 되는 블록 숫자

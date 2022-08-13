@@ -16,41 +16,9 @@ import "@beandao/contracts/interfaces/IERC165.sol";
 import "./Math.sol";
 import "./IModule.sol";
 
-// packing
-// 24, 160, 160, 24, 24, 32
-// fee, token0, token1, ticks, delegatePeriod
-library UniswapStorage {
-    bytes32 constant POSITION = keccak256("eth.dao.bean.stakemodule.uniswapv3");
-
-    struct Checkpoint {
-        uint32 fromBlock;
-        uint224 votes;
-    }
-
-    struct Storage {
-        bool initialized;
-        int24 lowerTick;
-        int24 upperTick;
-        uint24 fee;
-        int24 tickSpacing;
-        uint32 undelegatePeriod;
-        address token0;
-        address token1;
-        address pool;
-        mapping(address => uint256) balances;
-        mapping(address => address) delegates;
-        mapping(address => Checkpoint[]) checkpoints;
-        Checkpoint[] totalCheckpoints;
-    }
-
-    function moduleStorage() internal pure returns (Storage storage s) {
-        bytes32 position = POSITION;
-        // solhint-disable-next-line no-inline-assembly
-        assembly {
-            s.slot := position
-        }
-    }
-}
+error UnorderedTick();
+error NotEnoughVotes();
+error NotAllowedAddress(address delegatee);
 
 /**
  * @author  yoonsung.eth
@@ -59,89 +27,19 @@ library UniswapStorage {
  *          만들어 해당 모듈을 통해 공급된 유동성은 투표권으로 계산됩니다. 해당 모듈이 초기화 될 때 유동성의 가격 범위를 지정할 수 있으며, 해당 영역에
  *          대하여 유동성이 추가됩니다.
  * @dev     모든 토큰은 해당 모듈을 사용하는 Council로 전송되어 Pool로 전송되는 과정을 거칩니다.
- * TODO: FEE Policy, ETH to WETH, Optimization
+ * TODO: FEE Policy, Optimization
  */
 contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
-    error NotEnoughVotes();
-    error NotAllowedAddress(address delegatee);
-
-    // address public constant WETH = ;
-    address public constant UNIV3_FACTORY = 0x1F98431c8aD98523631AE4a59f267346ea31F984;
-    address public constant UNIV3_ROUTER = 0xE592427A0AEce92De3Edee1F18E0157C05861564;
-    address public constant UNIV3_QUOTOR_V2 = 0x61fFE014bA17989E743c5F6cB21bF9697530B21e;
-    uint256 internal constant DUST_THRESHOLD = 1e6;
-
-    event Delegate(address to, uint256 prevVotes, uint256 nextVotes);
-
-    modifier initializer() {
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
-        if (s.initialized) revert();
-        s.initialized = true;
-        _;
+    struct Checkpoint {
+        uint32 fromBlock;
+        uint224 votes;
     }
 
-    modifier checkDeadline(uint256 deadline) {
-        if (block.timestamp > deadline) revert();
-        _;
-    }
-
-    /**
-     * @notice 해당 모듈을 초기화 하는데 사용하는 함수, 해당 함수는 Council을 통해서
-     */
-    function initialize(bytes calldata data) external initializer {
-        address pool;
-        address token0;
-        address token1;
-        uint24 poolFee;
-        uint160 sqrtPriceX96;
-        int24 lowerTick;
-        int24 upperTick;
-        uint32 period;
-        // 토큰0, 토큰 1, 수수료, 토큰0을 기준 초기 가격, 틱 시작, 틱 종료, undelegate 기간
-        (token0, token1, poolFee, sqrtPriceX96, lowerTick, upperTick, period) = abi.decode(
-            data,
-            (address, address, uint24, uint160, int24, int24, uint32)
-        );
-
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
-
-        // Pool이 만들어지는 과정에서 토큰의 순서는 신경쓰지 않음.
-        pool = IUniswapV3Factory(UNIV3_FACTORY).createPool(token0, token1, poolFee);
-        IUniswapV3Pool(pool).initialize(sqrtPriceX96);
-        int24 tickSpacing = IUniswapV3Pool(pool).tickSpacing();
-
-        // 각 토큰이 Pool과 Router에 무제한 토큰 허용
-        safeApprove(token0, UNIV3_ROUTER, type(uint256).max);
-        safeApprove(token1, UNIV3_ROUTER, type(uint256).max);
-
-        if (lowerTick > upperTick) {
-            (upperTick, lowerTick) = (lowerTick, upperTick);
-        }
-
-        unchecked {
-            // validate tick
-            if ((lowerTick % tickSpacing) != 0)
-                lowerTick = lowerTick - (lowerTick % tickSpacing) + (lowerTick < 0 ? -tickSpacing : tickSpacing);
-            if ((upperTick % tickSpacing) != 0)
-                upperTick = upperTick - (upperTick % tickSpacing) + (upperTick < 0 ? -tickSpacing : tickSpacing);
-        }
-
-        if (upperTick <= lowerTick) revert();
-
-        if (token0 > token1) {
-            (token0, token1) = (token1, token0);
-        }
-
-        (s.pool, s.token0, s.token1, s.lowerTick, s.upperTick, s.fee, s.tickSpacing, s.undelegatePeriod) = (
-            pool,
-            token0,
-            token1,
-            lowerTick,
-            upperTick,
-            poolFee,
-            tickSpacing,
-            period
-        );
+    struct Storage {
+        mapping(address => uint256) balances;
+        mapping(address => address) delegates;
+        mapping(address => Checkpoint[]) checkpoints;
+        Checkpoint[] totalCheckpoints;
     }
 
     struct StakeParam {
@@ -152,29 +50,96 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
         uint256 deadline;
     }
 
+    struct StakeSingleParam {
+        uint256 amountIn;
+        uint256 amountInForSwap;
+        uint256 amountOutMin;
+        bool isAmountIn0;
+        uint256 deadline;
+    }
+
+    // address public constant WETH = ;
+    bytes32 constant POSITION = keccak256("eth.dao.bean.stakemodule.uniswapv3");
+    address public constant UNIV3_FACTORY = 0x1F98431c8aD98523631AE4a59f267346ea31F984;
+    address public constant UNIV3_ROUTER = 0xE592427A0AEce92De3Edee1F18E0157C05861564;
+    address public constant UNIV3_QUOTOR_V2 = 0x61fFE014bA17989E743c5F6cB21bF9697530B21e;
+    uint256 internal constant DUST_THRESHOLD = 1e6;
+
+    address public immutable council;
+    address public immutable token0;
+    address public immutable token1;
+    address public immutable pool;
+    int24 public immutable lowerTick;
+    int24 public immutable upperTick;
+    int24 public immutable tickSpacing;
+    uint24 public immutable fee;
+    uint32 public immutable undelegatePeriod;
+
+    modifier onlyCouncil() {
+        if (address(this) != council) revert();
+        _;
+    }
+
+    modifier checkDeadline(uint256 deadline) {
+        if (block.timestamp > deadline) revert();
+        _;
+    }
+
+    event Delegate(address to, uint256 prevVotes, uint256 nextVotes);
+
+    /**
+     * @notice 해당 모듈을 초기화 하는데 사용하는 함수, 해당 함수는 Council을 통해서
+     */
+    constructor(
+        address councilAddr,
+        address _token0,
+        address _token1,
+        uint24 _fee,
+        uint160 _sqrtPriceX96,
+        int24 _lowerTick,
+        int24 _upperTick,
+        uint32 _undelegatePeriod
+    ) {
+        (council, fee, undelegatePeriod) = (councilAddr, _fee, _undelegatePeriod);
+
+        address tmppool = IUniswapV3Factory(UNIV3_FACTORY).getPool(_token0, _token1, _fee);
+        pool = tmppool == address(0) ? IUniswapV3Factory(UNIV3_FACTORY).createPool(_token0, _token1, _fee) : tmppool;
+        (uint160 sqrtPriceX96, , , , , , ) = IUniswapV3Pool(pool).slot0();
+        if (sqrtPriceX96 == 0) {
+            IUniswapV3Pool(pool).initialize(_sqrtPriceX96);
+        }
+        tickSpacing = IUniswapV3Pool(pool).tickSpacing();
+
+        unchecked {
+            // validate tick
+            lowerTick = (_lowerTick % tickSpacing) != 0
+                ? _lowerTick - (_lowerTick % tickSpacing) + (_lowerTick < 0 ? -tickSpacing : tickSpacing)
+                : _lowerTick;
+            upperTick = (_upperTick % tickSpacing) != 0
+                ? _upperTick - (_upperTick % tickSpacing) + (_upperTick < 0 ? -tickSpacing : tickSpacing)
+                : _upperTick;
+        }
+        if (upperTick <= lowerTick) revert UnorderedTick();
+        (token0, token1) = _token0 > _token1 ? (_token1, _token0) : (_token0, _token1);
+    }
+
     /**
      * @notice  두 개의 토큰을 이용하여, 투표권으로 변환합니다.
      * @dev     추가되어야 할 수량값은 급격하게 가격이 변동하는 경우를 대비한 값이 입력되어야 합니다.
      * @param   params token0과 token1의 수량과 최소한 추가되어야 할 수량 값
      */
-    function stake(StakeParam calldata params) external checkDeadline(params.deadline) {
+    function stake(StakeParam calldata params) external checkDeadline(params.deadline) onlyCouncil {
         // 둘 다 0으로 들어오는 경우 실패
         if (params.amount0Desired == 0 && params.amount1Desired == 0) revert();
+        Storage storage s = moduleStorage();
 
-        // 저장된 데이터 조회
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
-        (IUniswapV3Pool pool, int24 lowerTick, int24 upperTick, address currentDelegatee) = (
-            IUniswapV3Pool(s.pool),
-            s.lowerTick,
-            s.upperTick,
-            s.delegates[msg.sender]
-        );
+        address currentDelegatee = s.delegates[msg.sender];
         bytes32 positionKey = PositionKey.compute(address(this), lowerTick, upperTick);
 
         // 현재 포지션에 있는 유동성
-        (uint128 existingLiquidity, , , , ) = pool.positions(positionKey);
+        (uint128 existingLiquidity, , , , ) = IUniswapV3Pool(pool).positions(positionKey);
         // 현재 Pool의 가격
-        (uint160 sqrtPriceX96, , , , , , ) = pool.slot0();
+        (uint160 sqrtPriceX96, , , , , , ) = IUniswapV3Pool(pool).slot0();
 
         // Pool에 더해야 하는 유동성 계산
         uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
@@ -188,7 +153,7 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
         if (liquidity == 0) revert();
 
         // 해당 시점에서, Council이 가지고 있는 토큰을 등록함
-        (uint256 amount0, uint256 amount1) = pool.mint(
+        (uint256 amount0, uint256 amount1) = IUniswapV3Pool(pool).mint(
             address(this),
             lowerTick,
             upperTick,
@@ -211,7 +176,6 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
         if (existingShareSupply == 0) {
             shares = liquidity;
         } else {
-            // shares = existingShareSupply * liquidity / existingLiquidity;
             shares = Math.mulDiv(existingShareSupply, liquidity, existingLiquidity);
         }
 
@@ -232,14 +196,6 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
         writeCheckpoint(s.totalCheckpoints, _add, shares);
     }
 
-    struct StakeSingleParam {
-        uint256 amountIn;
-        uint256 amountInForSwap;
-        uint256 amountOutMin;
-        bool isAmountIn0;
-        uint256 deadline;
-    }
-
     /**
      * @notice  하나의 토큰만 예치하여, swap을 통해 희석한 다음 투표권으로 변환합니다.
      * @dev     추가되어야 할 수량값은 급격하게 가격이 변동하는 경우를 대비한 값이 입력되어야 합니다. param에 사용될 값은 `getSingleSidedAmount`
@@ -247,39 +203,31 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
      * @param   params 추가할 총 토큰 수량, 교환할 토큰 수량, 최소로 교환된 토큰 수량, 입력되는 토큰이
      * TODO: Deadline.
      */
-    function stake(StakeSingleParam calldata params) external checkDeadline(params.deadline) {
+    function stake(StakeSingleParam calldata params) external checkDeadline(params.deadline) onlyCouncil {
         if (params.amountInForSwap > params.amountIn) revert();
+        Storage storage s = moduleStorage();
 
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
-        (
-            IUniswapV3Pool pool,
-            address token0,
-            address token1,
-            uint24 poolFee,
-            int24 lowerTick,
-            int24 upperTick,
-            address currentDelegatee
-        ) = (IUniswapV3Pool(s.pool), s.token0, s.token1, s.fee, s.lowerTick, s.upperTick, s.delegates[msg.sender]);
-
+        address currentDelegatee = s.delegates[msg.sender];
         (address tokenIn, address tokenOut) = params.isAmountIn0 ? (token0, token1) : (token1, token0);
 
         safeTransferFrom(tokenIn, msg.sender, address(this), params.amountIn);
 
-        ISwapRouter v3router = ISwapRouter(UNIV3_ROUTER);
+        safeApprove(tokenIn, UNIV3_ROUTER, params.amountInForSwap);
 
-        uint256 amountOut = v3router.exactInput(
+        uint256 amountOut = ISwapRouter(UNIV3_ROUTER).exactInput(
             ISwapRouter.ExactInputParams({
-                path: abi.encodePacked(tokenIn, poolFee, tokenOut),
+                path: abi.encodePacked(tokenIn, fee, tokenOut),
                 recipient: address(this),
                 deadline: block.timestamp,
                 amountIn: params.amountInForSwap,
                 amountOutMinimum: params.amountOutMin
             })
         );
+
         bytes32 positionKey = PositionKey.compute(address(this), lowerTick, upperTick);
 
-        (uint128 existingLiquidity, , , , ) = pool.positions(positionKey);
-        (uint160 sqrtPriceX96, , , , , , ) = pool.slot0();
+        (uint128 existingLiquidity, , , , ) = IUniswapV3Pool(pool).positions(positionKey);
+        (uint160 sqrtPriceX96, , , , , , ) = IUniswapV3Pool(pool).slot0();
 
         (uint256 amount0, uint256 amount1) = params.isAmountIn0
             ? (params.amountIn - params.amountInForSwap, amountOut)
@@ -296,7 +244,13 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
         if (liquidity == 0) revert();
 
         // this stage for token transfered
-        (amount0, amount1) = pool.mint(address(this), lowerTick, upperTick, liquidity, abi.encode(this));
+        (amount0, amount1) = IUniswapV3Pool(pool).mint(
+            address(this),
+            lowerTick,
+            upperTick,
+            liquidity,
+            abi.encode(this)
+        );
 
         // added totalShare
         uint256 existingShareSupply;
@@ -309,7 +263,6 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
         if (existingShareSupply == 0) {
             shares = liquidity;
         } else {
-            // shares = existingShareSupply * liquidity / existingLiquidity;
             shares = Math.mulDiv(existingShareSupply, liquidity, existingLiquidity);
         }
 
@@ -346,19 +299,13 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
         }
     }
 
-    function unstake(uint256 shares) external {
+    function unstake(uint256 shares) external onlyCouncil {
         if (shares == 0) revert();
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
+        Storage storage s = moduleStorage();
 
         s.balances[msg.sender] -= shares;
 
-        (IUniswapV3Pool pool, int24 lowerTick, int24 upperTick, address currentDelegate, uint256 latestBalance) = (
-            IUniswapV3Pool(s.pool),
-            s.lowerTick,
-            s.upperTick,
-            s.delegates[msg.sender],
-            s.balances[msg.sender]
-        );
+        (address currentDelegate, uint256 latestBalance) = (s.delegates[msg.sender], s.balances[msg.sender]);
 
         uint256 currentTotalSupply;
         unchecked {
@@ -368,12 +315,18 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
 
         bytes32 positionKey = PositionKey.compute(address(this), lowerTick, upperTick);
 
-        (uint128 existingLiquidity, , , , ) = pool.positions(positionKey);
+        (uint128 existingLiquidity, , , , ) = IUniswapV3Pool(pool).positions(positionKey);
         uint128 removedLiquidity = uint128(Math.mulDiv(existingLiquidity, shares, currentTotalSupply));
         // 유동성 해제,
-        (uint256 amount0, uint256 amount1) = pool.burn(lowerTick, upperTick, removedLiquidity);
+        (uint256 amount0, uint256 amount1) = IUniswapV3Pool(pool).burn(lowerTick, upperTick, removedLiquidity);
         // 해제된 유동성 전송
-        (amount0, amount1) = pool.collect(msg.sender, lowerTick, upperTick, uint128(amount0), uint128(amount1));
+        (amount0, amount1) = IUniswapV3Pool(pool).collect(
+            msg.sender,
+            lowerTick,
+            upperTick,
+            uint128(amount0),
+            uint128(amount1)
+        );
 
         // 현재 위임에서 share 만큼 삭감
         delegateVotes(currentDelegate, address(0), shares);
@@ -394,9 +347,10 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
     /**
      * @notice 예치된 투표권을 특정 주소로 위임합니다.
      */
-    function delegate(address delegatee) external {
+    function delegate(address delegatee) external onlyCouncil {
         if (delegatee == address(0)) revert NotAllowedAddress(delegatee);
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
+        Storage storage s = moduleStorage();
+
         (address currentDelegate, uint256 latestBalance) = (s.delegates[msg.sender], s.balances[msg.sender]);
 
         if (latestBalance == 0) revert NotEnoughVotes();
@@ -409,18 +363,9 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
 
     function getSingleSidedAmount(uint256 amountIn, bool isAmountIn0)
         external
+        onlyCouncil
         returns (uint128 liquidity, uint256 amountForSwap)
     {
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
-
-        (address token0, address token1, int24 lowerTick, int24 upperTick, uint24 fee) = (
-            s.token0,
-            s.token1,
-            s.lowerTick,
-            s.upperTick,
-            s.fee
-        );
-
         (uint160 lowerSqrtPrice, uint160 upperSqrtPrice) = (
             TickMath.getSqrtRatioAtTick(lowerTick),
             TickMath.getSqrtRatioAtTick(upperTick)
@@ -504,18 +449,10 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
     }
 
     /**
-     * @notice 특정 주소의 리비전에 따른 투표권 정보를 반환합니다.
-     */
-    function checkpoints(address account, uint32 pos) public view returns (UniswapStorage.Checkpoint memory) {
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
-        return s.checkpoints[account][pos];
-    }
-
-    /**
      * @notice 누적된 특정 주소의 투표권 정보 개수를 가져옵니다.
      */
-    function numCheckpoints(address account) public view returns (uint32) {
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
+    function numCheckpoints(address account) public view onlyCouncil returns (uint32) {
+        Storage storage s = moduleStorage();
         return uint32(s.checkpoints[account].length);
     }
 
@@ -525,9 +462,9 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
      * @param blockNumber 기반이 되는 블록 숫자
      * @return votes 투표 권한
      */
-    function getPriorVotes(address target, uint256 blockNumber) external view returns (uint256 votes) {
+    function getPriorVotes(address target, uint256 blockNumber) external view onlyCouncil returns (uint256 votes) {
         if (blockNumber > block.number) revert();
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
+        Storage storage s = moduleStorage();
         votes = _checkpointsLookup(s.checkpoints[target], blockNumber);
     }
 
@@ -537,10 +474,9 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
      * @param blockNumber 기반이 되는 블록 숫자
      * @return rate 비율
      */
-    function getPriorRate(address target, uint256 blockNumber) external view returns (uint256 rate) {
+    function getPriorRate(address target, uint256 blockNumber) external view onlyCouncil returns (uint256 rate) {
         if (blockNumber > block.number) revert();
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
-
+        Storage storage s = moduleStorage();
         rate =
             (_checkpointsLookup(s.checkpoints[target], blockNumber) * 1e4) /
             _checkpointsLookup(s.totalCheckpoints, blockNumber);
@@ -551,9 +487,9 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
      * @param votes 계산하고자 하는 투표권한
      * @param blockNumber 기반이 되는 블록 숫자
      */
-    function getVotesToRate(uint256 votes, uint256 blockNumber) external view returns (uint256 rate) {
+    function getVotesToRate(uint256 votes, uint256 blockNumber) external view onlyCouncil returns (uint256 rate) {
         if (blockNumber > block.number) revert();
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
+        Storage storage s = moduleStorage();
         rate = (votes * 1e4) / _checkpointsLookup(s.totalCheckpoints, blockNumber);
     }
 
@@ -562,25 +498,25 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
      * @param blockNumber 기반이 되는 블록 숫자
      * @return totalVotes 총 투표권
      */
-    function getPriorTotalSupply(uint256 blockNumber) external view returns (uint256 totalVotes) {
+    function getPriorTotalSupply(uint256 blockNumber) external view onlyCouncil returns (uint256 totalVotes) {
         if (blockNumber > block.number) revert();
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
+        Storage storage s = moduleStorage();
         totalVotes = _checkpointsLookup(s.totalCheckpoints, blockNumber);
     }
 
     /**
      * @notice 특정 주소의 총 예치 수량을 반환합니다.
      */
-    function balanceOf(address target) public view returns (uint256 balance) {
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
+    function balanceOf(address target) public view onlyCouncil returns (uint256 balance) {
+        Storage storage s = moduleStorage();
         balance = s.balances[target];
     }
 
     /**
      * @notice 특정 주소의 총 투표권을 반환합니다.
      */
-    function voteOf(address target) public view returns (uint256 votes) {
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
+    function voteOf(address target) public view onlyCouncil returns (uint256 votes) {
+        Storage storage s = moduleStorage();
         uint256 length = s.checkpoints[target].length;
         unchecked {
             votes = length != 0 ? s.checkpoints[target][length - 1].votes : 0;
@@ -590,43 +526,22 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
     /**
      * @notice 특정 주소가 투표권을 위임하고 있는 주소를 반환합니다.
      */
-    function getDelegate(address target) public view returns (address delegatee) {
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
+    function getDelegate(address target) public view onlyCouncil returns (address delegatee) {
+        Storage storage s = moduleStorage();
         delegatee = s.delegates[target];
     }
 
     // 총 투표권 수량
-    function totalSupply() external view returns (uint256 amount) {
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
+    function totalSupply() external view onlyCouncil returns (uint256 amount) {
+        Storage storage s = moduleStorage();
         unchecked {
             uint256 length = s.totalCheckpoints.length;
             amount = length != 0 ? s.totalCheckpoints[length - 1].votes : 0;
         }
     }
 
-    function getToken0() public view returns (address token) {
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
-        token = s.token0;
-    }
-
-    function getToken1() public view returns (address token) {
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
-        token = s.token1;
-    }
-
-    function getTokens() public view returns (address token0, address token1) {
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
-        (token0, token1) = (s.token0, s.token1);
-    }
-
-    function getPool() public view returns (address pool) {
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
-        pool = s.pool;
-    }
-
-    function isInitialized() public view returns (bool) {
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
-        return s.initialized;
+    function getTokens() public view onlyCouncil returns (address, address) {
+        return (token0, token1);
     }
 
     // Pool에서 fallback으로 호출되는 함수
@@ -634,11 +549,8 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
         uint256 amount0Owed,
         uint256 amount1Owed,
         bytes calldata data
-    ) external {
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
-
+    ) external onlyCouncil {
         address from = abi.decode(data, (address));
-        (address pool, address token0, address token1) = (s.pool, s.token0, s.token1);
         if (from != address(this)) {
             if (amount0Owed != 0) safeTransferFrom(token0, from, pool, amount0Owed);
             if (amount1Owed != 0) safeTransferFrom(token1, from, pool, amount1Owed);
@@ -664,7 +576,7 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
         address to,
         uint256 amount
     ) internal {
-        UniswapStorage.Storage storage s = UniswapStorage.moduleStorage();
+        Storage storage s = moduleStorage();
 
         if (from != to && amount != 0) {
             if (from != address(0)) {
@@ -680,7 +592,7 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
     }
 
     function writeCheckpoint(
-        UniswapStorage.Checkpoint[] storage ckpts,
+        Checkpoint[] storage ckpts,
         function(uint256, uint256) view returns (uint256) op,
         uint256 delta
     ) internal returns (uint256 oldWeight, uint256 newWeight) {
@@ -691,15 +603,11 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
         if (length > 0 && ckpts[length - 1].fromBlock == block.number) {
             ckpts[length - 1].votes = uint224(newWeight);
         } else {
-            ckpts.push(UniswapStorage.Checkpoint({fromBlock: uint32(block.number), votes: uint224(newWeight)}));
+            ckpts.push(Checkpoint({fromBlock: uint32(block.number), votes: uint224(newWeight)}));
         }
     }
 
-    function _checkpointsLookup(UniswapStorage.Checkpoint[] storage ckpts, uint256 blockNumber)
-        private
-        view
-        returns (uint256 votes)
-    {
+    function _checkpointsLookup(Checkpoint[] storage ckpts, uint256 blockNumber) private view returns (uint256 votes) {
         uint256 high = ckpts.length;
         uint256 low = 0;
         uint256 mid;
@@ -855,5 +763,13 @@ contract UniswapModule is IModule, IERC165, IUniswapV3MintCallback {
 
     function _sub(uint256 a, uint256 b) private pure returns (uint256) {
         return a - b;
+    }
+
+    function moduleStorage() internal pure returns (Storage storage s) {
+        bytes32 position = POSITION;
+        // solhint-disable-next-line no-inline-assembly
+        assembly {
+            s.slot := position
+        }
     }
 }

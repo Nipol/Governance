@@ -35,28 +35,12 @@ contract Counter {
 contract GovernanceTest is Test {
     Governance g;
 
-    modifier govInit() {
-        g.initialize("bean the DAO", address(this), 1 days);
-        _;
-    }
-
     function setUp() public {
-        string memory _name = "bean the DAO";
-        Governance tg = new Governance(_name, address(this), 1 days);
-        Deployer d = new Deployer(address(tg));
-        g = Governance(d.deployIncrement());
-    }
-
-    function testInitialize() public {
-        string memory _name = "bean the DAO";
-
-        g.initialize(_name, address(this), 1 days);
-
-        assertEq(g.name(), _name);
-        assertEq(g.council(), address(this));
+        g = new Governance(address(this), 1 days);
     }
 
     function testProposeFromNotCouncil() public {
+        vm.prank(address(1234));
         IGovernance.ProposalParams memory p = IGovernance.ProposalParams({
             proposer: address(this),
             spells: new bytes32[](0),
@@ -64,12 +48,12 @@ contract GovernanceTest is Test {
         });
 
         vm.expectRevert(
-            abi.encodeWithSelector(bytes4(keccak256("Governance__FromNotCouncil(address)")), address(this))
+            abi.encodeWithSelector(bytes4(keccak256("Governance__FromNotCouncil(address)")), address(1234))
         );
         g.propose(p);
     }
 
-    function testPropose() public govInit {
+    function testPropose() public {
         IGovernance.ProposalParams memory p = IGovernance.ProposalParams({
             proposer: address(this),
             spells: new bytes32[](0),
@@ -89,12 +73,12 @@ contract GovernanceTest is Test {
         assertEq(uint8(state), uint8(IGovernance.ProposalState.AWAIT));
     }
 
-    function testApproveWithoutProposal() public govInit {
+    function testApproveWithoutProposal() public {
         vm.expectRevert(abi.encodeWithSelector(bytes4(keccak256("Governance__NotProposed(bytes32)")), bytes32(0)));
         g.approve(bytes32(0));
     }
 
-    function testApprove() public govInit {
+    function testApprove() public {
         IGovernance.ProposalParams memory p = IGovernance.ProposalParams({
             proposer: address(this),
             spells: new bytes32[](0),
@@ -108,12 +92,12 @@ contract GovernanceTest is Test {
         assertEq(uint8(state), uint8(IGovernance.ProposalState.APPROVED));
     }
 
-    function testDropWithoutProposal() public govInit {
+    function testDropWithoutProposal() public {
         vm.expectRevert(abi.encodeWithSelector(bytes4(keccak256("Governance__NotProposed(bytes32)")), bytes32(0)));
         g.drop(bytes32(0));
     }
 
-    function testDrop() public govInit {
+    function testDrop() public {
         IGovernance.ProposalParams memory p = IGovernance.ProposalParams({
             proposer: address(this),
             spells: new bytes32[](0),
@@ -126,7 +110,7 @@ contract GovernanceTest is Test {
         assertEq(uint8(state), uint8(IGovernance.ProposalState.DROPPED));
     }
 
-    function testExecute() public govInit {
+    function testExecute() public {
         Counter c = new Counter();
 
         bytes32 spell = bytes32(
@@ -167,7 +151,7 @@ contract GovernanceTest is Test {
         assertEq(uint8(state), uint8(IGovernance.ProposalState.EXECUTED));
     }
 
-    function testExecuteForSlotUpdate() public govInit {
+    function testExecuteForSlotUpdate() public {
         SlotUpdater c = new SlotUpdater();
 
         bytes32 spell = bytes32(
@@ -207,7 +191,7 @@ contract GovernanceTest is Test {
         assertEq(uint8(state), uint8(IGovernance.ProposalState.EXECUTED));
     }
 
-    function testExecuteNotResolved() public govInit {
+    function testExecuteNotResolved() public {
         IGovernance.ProposalParams memory p = IGovernance.ProposalParams({
             proposer: address(this),
             spells: new bytes32[](0),
@@ -227,7 +211,7 @@ contract GovernanceTest is Test {
         assertEq(uint8(state), uint8(IGovernance.ProposalState.APPROVED));
     }
 
-    function testExecuteNotValidSpells() public govInit {
+    function testExecuteNotValidSpells() public {
         bytes32[] memory spells = new bytes32[](1);
         bytes[] memory elements = new bytes[](1);
 
@@ -270,7 +254,7 @@ contract GovernanceTest is Test {
         assertEq(uint8(state), uint8(IGovernance.ProposalState.APPROVED));
     }
 
-    function testAfterGracePeriodExecute() public govInit {
+    function testAfterGracePeriodExecute() public {
         bytes32[] memory spells = new bytes32[](0);
         bytes[] memory elements = new bytes[](0);
 
@@ -290,7 +274,7 @@ contract GovernanceTest is Test {
         assertEq(uint8(state), uint8(IGovernance.ProposalState.DROPPED));
     }
 
-    function testChangeCouncil() public govInit {
+    function testChangeCouncil() public {
         CouncilMock cm = new CouncilMock();
 
         bytes32 spell = bytes32(
@@ -330,14 +314,14 @@ contract GovernanceTest is Test {
         assertEq(g.council(), address(cm));
     }
 
-    function testChangeCouncilFromNotGovernance() public govInit {
+    function testChangeCouncilFromNotGovernance() public {
         vm.expectRevert(
             abi.encodeWithSelector(bytes4(keccak256("Governance__FromNotGovernance(address)")), address(this))
         );
         g.changeCouncil(address(1553));
     }
 
-    function testChangeCouncilButNotCouncil() public govInit {
+    function testChangeCouncilButNotCouncil() public {
         bytes32 spell = bytes32(
             abi.encodePacked(
                 g.changeCouncil.selector,
@@ -378,7 +362,7 @@ contract GovernanceTest is Test {
         assertEq(g.council(), address(this));
     }
 
-    function testChangeDelay() public govInit {
+    function testChangeDelay() public {
         bytes32 spell = bytes32(
             abi.encodePacked(
                 g.changeDelay.selector,
@@ -416,14 +400,14 @@ contract GovernanceTest is Test {
         assertEq(g.delay(), 2 days);
     }
 
-    function testChangeDelayFromNotGovernance() public govInit {
+    function testChangeDelayFromNotGovernance() public {
         vm.expectRevert(
             abi.encodeWithSelector(bytes4(keccak256("Governance__FromNotGovernance(address)")), address(this))
         );
         g.changeDelay(2 days);
     }
 
-    function testEmergencyExecute() public govInit {
+    function testEmergencyExecute() public {
         Counter c = new Counter();
 
         bytes32 spell = bytes32(
@@ -451,7 +435,7 @@ contract GovernanceTest is Test {
         assertEq(g.nonce(), 1);
     }
 
-    function testEmergencyCouncilChange() public govInit {
+    function testEmergencyCouncilChange() public {
         bytes32 spell = bytes32(
             abi.encodePacked(
                 g.emergencyCouncil.selector,
@@ -478,7 +462,7 @@ contract GovernanceTest is Test {
         assertEq(g.council(), address(1559));
     }
 
-    function testEmergencyCouncilNotAllowedGovernance() public govInit {
+    function testEmergencyCouncilNotAllowedGovernance() public {
         bytes32 spell = bytes32(
             abi.encodePacked(
                 g.emergencyCouncil.selector,
@@ -506,7 +490,7 @@ contract GovernanceTest is Test {
         assertEq(g.council(), address(this));
     }
 
-    function testEmergencyCouncilNotAllowedAlreadyCouncil() public govInit {
+    function testEmergencyCouncilNotAllowedAlreadyCouncil() public {
         bytes32 spell = bytes32(
             abi.encodePacked(
                 g.emergencyCouncil.selector,

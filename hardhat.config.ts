@@ -11,6 +11,17 @@ import { config as dotenvConfig } from 'dotenv';
 import { HardhatUserConfig } from 'hardhat/config';
 import { NetworkUserConfig } from 'hardhat/types';
 
+import fs from 'fs';
+import 'hardhat-preprocessor';
+
+function getRemappings() {
+  return fs
+    .readFileSync('remappings.txt', 'utf8')
+    .split('\n')
+    .filter(Boolean) // remove empty lines
+    .map(line => line.trim().split('='));
+}
+
 const { TASK_COMPILE_SOLIDITY_GET_SOURCE_PATHS } = require('hardhat/builtin-tasks/task-names');
 subtask(TASK_COMPILE_SOLIDITY_GET_SOURCE_PATHS).setAction(async (_, __, runSuper) => {
   const paths = await runSuper();
@@ -158,6 +169,22 @@ const config: HardhatUserConfig = {
     tests: './test',
     cache: './hh-cache',
     artifacts: './artifacts',
+  },
+
+  // This fully resolves paths for imports in the ./lib directory for Hardhat
+  preprocess: {
+    eachLine: hre => ({
+      transform: (line: string) => {
+        if (line.match(/^\s*import /i)) {
+          getRemappings().forEach(([find, replace]) => {
+            if (line.match(find)) {
+              line = line.replace(find, replace);
+            }
+          });
+        }
+        return line;
+      },
+    }),
   },
 
   etherscan: {
