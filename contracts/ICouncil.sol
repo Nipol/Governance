@@ -24,6 +24,33 @@ interface ICouncil {
         ABSENT
     }
 
+    struct Checkpoint {
+        uint32 fromBlock;
+        uint128 votes;
+    }
+
+    struct WithdrawPoint {
+        uint96 amount0;
+        uint96 amount1;
+        uint64 timestamp;
+    }
+
+    struct StakeParam {
+        uint256 amount0Desired;
+        uint256 amount1Desired;
+        uint256 amount0Min;
+        uint256 amount1Min;
+        uint256 deadline;
+    }
+
+    struct StakeSingleParam {
+        uint256 amountIn;
+        uint256 amountInForSwap;
+        uint256 amountOutMin;
+        bool isAmountIn0;
+        uint256 deadline;
+    }
+
     struct Slot {
         /// SLOT 0 START ---------- ----------
         // 제안 정족 수량 비율 - ex) 총 발행량의 10%
@@ -38,6 +65,8 @@ interface ICouncil {
         uint32 votePeriod;
         // 투표 변경 가능 period - ex) 2일
         uint32 voteChangableDelay;
+        // 출금 기간 - ex) 6 month
+        uint32 withdrawDelay;
     }
 
     /// @notice 프로포절에 대한 투표 정보 기록

@@ -9,19 +9,23 @@ import "../mocks/Deployer.sol";
 import "../mocks/GovernanceMock.sol";
 import "../mocks/ERC20.sol";
 import "../mocks/ProxyMock.sol";
-
-import {UniswapModule, Math, TickMath} from "../VoteModule/UniswapModule.sol";
-
 import "UniswapV3Pack/v3-core/interfaces/IUniswapV3Pool.sol";
 import "UniswapV3Pack/v3-core/interfaces/IUniswapV3Factory.sol";
 import "UniswapV3Pack/v3-periphery/interfaces/ISwapRouter.sol";
 
-contract UniswapModuleExistPoolTest {
+contract CouncilExistPoolTest {
+    uint16 proposalQuorum = 1000; // 10%
+    uint16 voteQuorum = 7000; // 70%
+    uint16 emergencyQuorum = 9500; // 95%
+    uint32 voteStartDelay = 0; // 투표 시작 딜레이 0일
+    uint32 votePeriod = 604800; // 투표 기간 7일
+    uint32 voteChangableDelay = 345600; // 투표 변경 가능한 기간 4일
+    uint32 withdrawDelay = 7 days;
     address public constant UNIV3_FACTORY = 0x1F98431c8aD98523631AE4a59f267346ea31F984;
     uint24 constant fee = 3000;
     StandardToken token0;
     StandardToken token1;
-    UniswapModule uniModule;
+    Council public c;
 
     uint160 initialPrice;
     uint160 upperPrice;
@@ -51,15 +55,56 @@ contract UniswapModuleExistPoolTest {
     }
 
     function testExistedPool() public {
-        uniModule = new UniswapModule(
-            address(0),
+        c = new Council(
+            proposalQuorum,
+            voteQuorum,
+            emergencyQuorum,
+            voteStartDelay,
+            votePeriod,
+            voteChangableDelay,
+            withdrawDelay,
             address(token0),
             address(token1),
             3000,
             initialPrice,
             lowerTick,
+            upperTick
+        );
+    }
+
+    function testReversedToken() public {
+        c = new Council(
+            proposalQuorum,
+            voteQuorum,
+            emergencyQuorum,
+            voteStartDelay,
+            votePeriod,
+            voteChangableDelay,
+            withdrawDelay,
+            address(token1),
+            address(token0),
+            3000,
+            initialPrice,
+            lowerTick,
+            upperTick
+        );
+    }
+
+    function testReversedTick() public {
+        c = new Council(
+            proposalQuorum,
+            voteQuorum,
+            emergencyQuorum,
+            voteStartDelay,
+            votePeriod,
+            voteChangableDelay,
+            withdrawDelay,
+            address(token0),
+            address(token1),
+            3000,
+            initialPrice,
             upperTick,
-            7 days
+            lowerTick
         );
     }
 }
@@ -77,18 +122,15 @@ abstract contract ZeroState is Test {
     uint32 voteStartDelay = 0; // 투표 시작 딜레이 0일
     uint32 votePeriod = 604800; // 투표 기간 7일
     uint32 voteChangableDelay = 345600; // 투표 변경 가능한 기간 4일
+    uint32 withdrawDelay = 7 days;
 
     Council public c;
     StandardToken token0;
     StandardToken token1;
-    UniswapModule uniModule;
     address pm;
     address base;
 
     function setUp() public virtual {
-        c = new Council(proposalQuorum, voteQuorum, emergencyQuorum, voteStartDelay, votePeriod, voteChangableDelay);
-        vm.label(address(c), "Council");
-
         token0 = new StandardToken("bean the token", "BEAN", 18);
         token1 = new StandardToken("Wrapped Ether", "WETH", 18);
         base = address(token0);
@@ -108,48 +150,25 @@ abstract contract ZeroState is Test {
             (lowerTick, upperTick) = (upperTick, lowerTick);
         }
 
-        uniModule = new UniswapModule(
-            address(c),
+        c = new Council(
+            proposalQuorum,
+            voteQuorum,
+            emergencyQuorum,
+            voteStartDelay,
+            votePeriod,
+            voteChangableDelay,
+            withdrawDelay,
             address(token0),
             address(token1),
             3000,
             initialPrice,
             lowerTick,
-            upperTick,
-            7 days
+            upperTick
         );
-
-        c.initialVoteModule(address(uniModule));
-
+        vm.label(address(c), "Council");
         vm.label(address(this), "Caller");
         vm.label(address(token0), "BaseToken");
         vm.label(address(token1), "PairToken");
-        vm.label(address(uniModule), "UniswapModule");
-    }
-}
-
-contract UniswapModuleDeployTest is ZeroState {
-    function setUp() public override {
-        super.setUp();
-        pm = address(new ProxyMock(address(uniModule)));
-    }
-
-    function testInitialized() public {
-        (address _token0, address _token1) = UniswapModule(address(c)).getTokens();
-        assertEq(_token0, address(token0) > address(token1) ? address(token1) : address(token0));
-        assertEq(_token1, address(token0) > address(token1) ? address(token0) : address(token1));
-    }
-
-    function testInitializedFromProxy() public {
-        vm.expectRevert();
-        UniswapModule(pm).getTokens();
-    }
-}
-
-abstract contract LinkState is ZeroState {
-    function setUp() public virtual override {
-        super.setUp();
-        pm = address(new ProxyMock(address(uniModule)));
 
         token0.mint(101e18);
         token0.approve(address(c), type(uint256).max);
@@ -159,20 +178,58 @@ abstract contract LinkState is ZeroState {
         token1.approve(address(c), type(uint256).max);
         token1.approve(UNIV3_ROUTER, type(uint256).max);
 
-        address pool = UniswapModule(address(c)).pool();
-        vm.label(pool, "Uniswap Pool");
+        address pool = c.pool();
+        vm.label(pool, "bean:WETH Pool");
         vm.label(0x1F98431c8aD98523631AE4a59f267346ea31F984, "Uniswap Factory");
         vm.label(0xE592427A0AEce92De3Edee1F18E0157C05861564, "Uniswap Router");
     }
 }
 
-contract UniswapModuleLinkTest is LinkState {
+contract CouncilDeployTest is ZeroState {
+    function setUp() public override {
+        super.setUp();
+    }
+
+    function testName() public {
+        assertEq(c.name(), "Council");
+    }
+
+    function testSlot() public {
+        (
+            uint16 _proposalQuorum,
+            uint16 _voteQuorum,
+            uint16 _emergencyQuorum,
+            uint32 _voteStartDelay,
+            uint32 _votePeriod,
+            uint32 _voteChangableDelay,
+            uint32 _withdrawDelay
+        ) = c.slot();
+
+        assertEq(_proposalQuorum, proposalQuorum);
+        assertEq(_voteQuorum, voteQuorum);
+        assertEq(_emergencyQuorum, emergencyQuorum);
+        assertEq(_voteStartDelay, voteStartDelay);
+        assertEq(_votePeriod, votePeriod);
+        assertEq(_voteChangableDelay, voteChangableDelay);
+        assertEq(_withdrawDelay, withdrawDelay);
+    }
+
+    function testTokens() public {
+        (address _token0, address _token1) = c.getTokens();
+        assertEq(_token0, address(token0) > address(token1) ? address(token1) : address(token0));
+        assertEq(_token1, address(token0) > address(token1) ? address(token0) : address(token1));
+    }
+
+    function testTotalSupply() public {
+        assertEq(c.totalSupply(), 0);
+    }
+
     function testStake__BaseToken() public {
-        (address _token0, ) = UniswapModule(address(c)).getTokens();
+        (address _token0, ) = c.getTokens();
         (bool isToken0Base, bool isToken1Base) = base == _token0 ? (true, false) : (false, true);
 
-        UniswapModule(address(c)).stake(
-            UniswapModule.StakeParam({
+        c.stake(
+            ICouncil.StakeParam({
                 amount0Desired: isToken0Base ? 100e18 : 0,
                 amount1Desired: isToken1Base ? 100e18 : 0,
                 amount0Min: isToken0Base ? 100e18 : 0,
@@ -180,34 +237,17 @@ contract UniswapModuleLinkTest is LinkState {
                 deadline: block.timestamp
             })
         );
-        assertEq(UniswapModule(address(c)).balanceOf(address(this)), 10_34448_07667_71197_919);
-        assertEq(UniswapModule(address(c)).totalSupply(), 10_34448_07667_71197_919);
-
-        // address pair = UniswapModule(address(c)).getPairToken();
-        // address base = UniswapModule(address(c)).getBaseToken();
-
-        // ISwapRouter v3router = ISwapRouter(UNIV3_ROUTER);
-
-        // // Exact Output tokenIn <- tokenOut
-        // v3router.exactOutput(
-        //     ISwapRouter.ExactOutputParams({
-        //         // Path is reversed
-        //         path: abi.encodePacked(base, fee, pair),
-        //         recipient: address(this),
-        //         deadline: block.timestamp,
-        //         amountInMaximum: 2e18, // 슬리피지
-        //         amountOut: 1e18
-        //     })
-        // );
+        assertEq(c.balanceOf(address(this)), 10_34448_07667_71197_919);
+        assertEq(c.totalSupply(), 10_34448_07667_71197_919);
     }
 
     function testStake__PairToken() public {
-        (address _token0, ) = UniswapModule(address(c)).getTokens();
+        (address _token0, ) = c.getTokens();
         (bool isToken0Base, bool isToken1Base) = base == _token0 ? (true, false) : (false, true);
 
         vm.expectRevert();
-        UniswapModule(address(c)).stake(
-            UniswapModule.StakeParam({
+        c.stake(
+            ICouncil.StakeParam({
                 amount0Desired: !isToken0Base ? 100e18 : 0,
                 amount1Desired: !isToken1Base ? 100e18 : 0,
                 amount0Min: !isToken0Base ? 100e18 : 0,
@@ -216,16 +256,57 @@ contract UniswapModuleLinkTest is LinkState {
             })
         );
     }
+
+    function testStakeAndSwap() public {
+        (address _token0, address _token1) = c.getTokens();
+        (bool isToken0Base, bool isToken1Base, address pair) = base == _token0 ? (true, false, _token1) : (false, true, _token0);
+
+        c.stake(
+            ICouncil.StakeParam({
+                amount0Desired: isToken0Base ? 100e18 : 0,
+                amount1Desired: isToken1Base ? 100e18 : 0,
+                amount0Min: isToken0Base ? 100e18 : 0,
+                amount1Min: isToken1Base ? 100e18 : 0,
+                deadline: block.timestamp
+            })
+        );
+        assertEq(c.balanceOf(address(this)), 10_34448_07667_71197_919);
+        assertEq(c.totalSupply(), 10_34448_07667_71197_919);
+
+        ISwapRouter v3router = ISwapRouter(UNIV3_ROUTER);
+
+        // Exact Output tokenIn <- tokenOut
+        v3router.exactOutput(
+            ISwapRouter.ExactOutputParams({
+                // Path is reversed
+                path: abi.encodePacked(base, fee, pair),
+                recipient: address(this),
+                deadline: block.timestamp,
+                amountInMaximum: 2e18, // 슬리피지
+                amountOut: 1e18
+            })
+        );
+    }
+
+    function testCallUniswapCallbackFromEOA() public {
+        vm.expectRevert();
+        c.uniswapV3MintCallback(0, 0, new bytes(0));
+    }
+
+    function testCallUniswapCallbackFromPool() public {
+        vm.prank(c.pool());
+        c.uniswapV3MintCallback(0, 0, abi.encode(address(1234)));
+    }
 }
 
-abstract contract StakedState is LinkState {
+abstract contract StakedState is ZeroState {
     function setUp() public virtual override {
         super.setUp();
-        (address _token0, ) = UniswapModule(address(c)).getTokens();
+        (address _token0, ) = c.getTokens();
         (bool isToken0Base, bool isToken1Base) = base == _token0 ? (true, false) : (false, true);
 
-        UniswapModule(address(c)).stake(
-            UniswapModule.StakeParam({
+        c.stake(
+            ICouncil.StakeParam({
                 amount0Desired: isToken0Base ? 100e18 : 0,
                 amount1Desired: isToken1Base ? 100e18 : 0,
                 amount0Min: isToken0Base ? 100e18 : 0,
@@ -236,21 +317,18 @@ abstract contract StakedState is LinkState {
     }
 }
 
-contract UniswapModuleStakedTest is StakedState {
+contract CouncilStakedTest is StakedState {
     function testCalculatePairAmountForSwap() public {
-        (address _token0, ) = UniswapModule(address(c)).getTokens();
+        (address _token0, ) = c.getTokens();
         (bool isToken0Base, ) = base == _token0 ? (true, false) : (false, true);
         // Add liquidity Single Side with PairToken
         uint256 amountIn = 10e18;
-        (, uint256 amountForSwap) = UniswapModule(address(c)).getSingleSidedAmount(
-            amountIn,
-            isToken0Base ? false : true
-        );
+        (, uint256 amountForSwap) = c.getSingleSidedAmount(amountIn, isToken0Base ? false : true);
         assertEq(amountForSwap, 2_61553_46757_19999_310);
 
         // check
-        // UniswapModule(address(c)).stake(
-        //     UniswapModule.StakeSingleParam({
+        // c.stake(
+        //     Council.StakeSingleParam({
         //         amountIn: amountIn,
         //         amountInForSwap: amountForSwap,
         //         amountOutMin: 0, // ignore slippage
@@ -261,7 +339,7 @@ contract UniswapModuleStakedTest is StakedState {
         // (address base, address pair) = isToken0Base
         //     ? (address(token0), address(token1))
         //     : (address(token1), address(token0));
-        // address pool = UniswapModule(address(c)).getPool();
+        // address pool = c.getPool();
         // ISwapRouter v3router = ISwapRouter(UNIV3_ROUTER);
         // // Exact Input pair -> base
         // uint256 tokenBaseOut = v3router.exactInput(
@@ -273,10 +351,10 @@ contract UniswapModuleStakedTest is StakedState {
         //         amountOutMinimum: 0
         //     })
         // );
-        // UniswapModule(address(c)).stake(tokenBaseOut, amountIn - amountForSwap, 0, 0);
+        // c.stake(tokenBaseOut, amountIn - amountForSwap, 0, 0);
         // // Add liquidity Single Side with BaseToken
         // amountIn = 1e18;
-        // (liquidity, amountForSwap) = UniswapModule(address(c)).getSingleSidedAmount(amountIn, true);
+        // (liquidity, amountForSwap) = c.getSingleSidedAmount(amountIn, true);
         // // Exact Input pair -> base
         // tokenBaseOut = v3router.exactInput(
         //     ISwapRouter.ExactInputParams({
@@ -288,7 +366,7 @@ contract UniswapModuleStakedTest is StakedState {
         //     })
         // );
         // // 토큰을 어떤 걸 넣는지에 따라 순서 조정되면 됨.
-        // UniswapModule(address(c)).stake(amountIn - amountForSwap, tokenBaseOut, 0, 0);
+        // c.stake(amountIn - amountForSwap, tokenBaseOut, 0, 0);
         // emit log_named_uint("token0 balanceOf(this)", token0.balanceOf(address(this)));
         // emit log_named_uint("token1 balanceOf(this)", token1.balanceOf(address(this)));
         // emit log_named_uint("token0 balanceOf(Pool)", token0.balanceOf(pool));
@@ -298,15 +376,15 @@ contract UniswapModuleStakedTest is StakedState {
     function testSingleSidedStake__PairToken() public {
         uint256 amountForSwap;
         uint256 amountIn;
-        (address _token0, ) = UniswapModule(address(c)).getTokens();
+        (address _token0, ) = c.getTokens();
         (bool isToken0Base, ) = base == _token0 ? (true, false) : (false, true);
         amountIn = 10e18;
 
         // Add liquidity Single Side with PairToken
-        (, amountForSwap) = UniswapModule(address(c)).getSingleSidedAmount(amountIn, isToken0Base ? false : true);
+        (, amountForSwap) = c.getSingleSidedAmount(amountIn, isToken0Base ? false : true);
 
-        UniswapModule(address(c)).stake(
-            UniswapModule.StakeSingleParam({
+        c.stake(
+            ICouncil.StakeSingleParam({
                 amountIn: amountIn,
                 amountInForSwap: amountForSwap,
                 amountOutMin: 0, // ignore slippage
@@ -315,7 +393,7 @@ contract UniswapModuleStakedTest is StakedState {
             })
         );
 
-        address pool = UniswapModule(address(c)).pool();
+        address pool = c.pool();
         emit log_named_uint("token0 balanceOf(this)", token0.balanceOf(address(this)));
         emit log_named_uint("token1 balanceOf(this)", token1.balanceOf(address(this)));
         emit log_named_uint("token0 balanceOf(Pool)", token0.balanceOf(pool));
@@ -323,12 +401,12 @@ contract UniswapModuleStakedTest is StakedState {
     }
 
     function testSingleSidedStake__BaseToken() public {
-        (address _token0, ) = UniswapModule(address(c)).getTokens();
+        (address _token0, ) = c.getTokens();
         (bool isToken0Base, ) = base == _token0 ? (true, false) : (false, true);
 
         vm.expectRevert(bytes("AS"));
-        UniswapModule(address(c)).stake(
-            UniswapModule.StakeSingleParam({
+        c.stake(
+            ICouncil.StakeSingleParam({
                 amountIn: 1e18,
                 amountInForSwap: 0,
                 amountOutMin: 0, // ignore slippage
@@ -337,7 +415,7 @@ contract UniswapModuleStakedTest is StakedState {
             })
         );
 
-        address pool = UniswapModule(address(c)).pool();
+        address pool = c.pool();
         emit log_named_uint("token0 balanceOf(this)", token0.balanceOf(address(this)));
         emit log_named_uint("token1 balanceOf(this)", token1.balanceOf(address(this)));
         emit log_named_uint("token0 balanceOf(Pool)", token0.balanceOf(pool));
@@ -351,14 +429,14 @@ abstract contract SwapState is StakedState {
 
     function setUp() public virtual override {
         super.setUp();
-        (address _token0, ) = UniswapModule(address(c)).getTokens();
+        (address _token0, ) = c.getTokens();
         (bool isToken0Base, ) = base == _token0 ? (true, false) : (false, true);
         amountIn = 10e18;
 
-        (, amountForSwap) = UniswapModule(address(c)).getSingleSidedAmount(amountIn, isToken0Base ? false : true);
+        (, amountForSwap) = c.getSingleSidedAmount(amountIn, isToken0Base ? false : true);
 
-        UniswapModule(address(c)).stake(
-            UniswapModule.StakeSingleParam({
+        c.stake(
+            ICouncil.StakeSingleParam({
                 amountIn: amountIn,
                 amountInForSwap: amountForSwap,
                 amountOutMin: 0, // ignore slippage
@@ -369,44 +447,109 @@ abstract contract SwapState is StakedState {
     }
 }
 
-contract UniswapModuleSwappedTest is SwapState {
+contract CouncilSwappedTest is SwapState {
     function testUnstake() public {
-        address pool = UniswapModule(address(c)).pool();
+        (address t0, address t1) = c.getTokens();
+        address pool = c.pool();
+
         emit log_named_uint("token0 balanceOf(this)", token0.balanceOf(address(this)));
         emit log_named_uint("token1 balanceOf(this)", token1.balanceOf(address(this)));
         emit log_named_uint("token0 balanceOf(Pool)", token0.balanceOf(pool));
         emit log_named_uint("token1 balanceOf(Pool)", token1.balanceOf(pool));
-        uint256 shares = UniswapModule(address(c)).balanceOf(address(this));
+        uint256 shares = c.balanceOf(address(this));
         emit log_named_uint("shares", shares);
 
-        UniswapModule(address(c)).unstake(shares);
+        c.unstake(shares);
 
         emit log_named_uint("token0 balanceOf(this)", token0.balanceOf(address(this)));
         emit log_named_uint("token1 balanceOf(this)", token1.balanceOf(address(this)));
         emit log_named_uint("token0 balanceOf(Pool)", token0.balanceOf(pool));
         emit log_named_uint("token1 balanceOf(Pool)", token1.balanceOf(pool));
+
+        (uint128 amount0, uint128 amount1, uint256 timestamp) = c.withdraws(address(this));
+        assertEq(IERC20(t0).balanceOf(address(c)), amount0);
+        assertEq(IERC20(t1).balanceOf(address(c)), amount1);
+        assertEq(block.timestamp, timestamp);
     }
 
     function testUnstake__halfAmount() public {
-        address pool = UniswapModule(address(c)).pool();
+        (address t0, address t1) = c.getTokens();
+        address pool = c.pool();
+
         emit log_named_uint("token0 balanceOf(this)", token0.balanceOf(address(this)));
         emit log_named_uint("token1 balanceOf(this)", token1.balanceOf(address(this)));
         emit log_named_uint("token0 balanceOf(Pool)", token0.balanceOf(pool));
         emit log_named_uint("token1 balanceOf(Pool)", token1.balanceOf(pool));
-        uint256 shares = UniswapModule(address(c)).balanceOf(address(this)) / 2;
+        uint256 shares = c.balanceOf(address(this)) / 2;
         emit log_named_uint("shares", shares);
 
-        UniswapModule(address(c)).unstake(shares);
+        c.unstake(shares);
 
         emit log_named_uint("token0 balanceOf(this)", token0.balanceOf(address(this)));
         emit log_named_uint("token1 balanceOf(this)", token1.balanceOf(address(this)));
         emit log_named_uint("token0 balanceOf(Pool)", token0.balanceOf(pool));
         emit log_named_uint("token1 balanceOf(Pool)", token1.balanceOf(pool));
+
+        (uint128 amount0, uint128 amount1, uint256 timestamp) = c.withdraws(address(this));
+        assertEq(IERC20(t0).balanceOf(address(c)), amount0);
+        assertEq(IERC20(t1).balanceOf(address(c)), amount1);
+        assertEq(block.timestamp, timestamp);
     }
 
     function testUnstake__NoneAmount() public {
         vm.expectRevert();
-        UniswapModule(address(c)).unstake(0);
+        c.unstake(0);
+    }
+
+    function testUnstake__OverAmount() public {
+        uint256 shares = c.balanceOf(address(this)) + 1;
+
+        vm.expectRevert();
+        c.unstake(shares);
+    }
+}
+
+abstract contract UnstakedState is SwapState {
+    uint256 latestTimestamp;
+
+    function setUp() public virtual override {
+        super.setUp();
+        uint256 shares = c.balanceOf(address(this));
+        latestTimestamp = block.timestamp;
+        c.unstake(shares);
+    }
+}
+
+contract UnstakedTest is UnstakedState {
+    function testWithdraw() public {
+        (address t0, address t1) = c.getTokens();
+
+        vm.warp(latestTimestamp + withdrawDelay);
+        c.withdraw(address(this));
+
+        (uint128 amount0, uint128 amount1, uint256 timestamp) = c.withdraws(address(this));
+        assertEq(0, amount0);
+        assertEq(0, amount1);
+        assertEq(0, timestamp);
+        assertEq(IERC20(t0).balanceOf(address(c)), 0);
+        assertEq(IERC20(t1).balanceOf(address(c)), 0);
+    }
+
+    function testWithdrawWithNotEligibleAddress() public {
+        vm.expectRevert();
+        c.withdraw(address(1234));
+    }
+
+    function testWithdrawBeforeDelayedTime() public {
+        (address t0, address t1) = c.getTokens();
+
+        vm.expectRevert();
+        c.withdraw(address(this));
+
+        (uint128 amount0, uint128 amount1, uint256 timestamp) = c.withdraws(address(this));
+        assertEq(IERC20(t0).balanceOf(address(c)), amount0);
+        assertEq(IERC20(t1).balanceOf(address(c)), amount1);
+        assertEq(block.timestamp, timestamp);
     }
 }
 
@@ -427,7 +570,7 @@ contract UniswapModuleSwappedTest is SwapState {
 // //         vm.label(address(this), "caller");
 // //     }
 
-// //     function testInitializeWithUniswapModule() public {
+// //     function testInitializeWithCouncil() public {
 // //         StandardToken token0 = new StandardToken("bean the token", "BEAN", 18);
 // //         StandardToken token1 = new StandardToken("SAMPLE", "SMP", 18);
 
@@ -463,7 +606,7 @@ contract UniswapModuleSwappedTest is SwapState {
 // //         );
 // //     }
 
-// //     function testInitializeWithUniswapModuleAndStake() public {
+// //     function testInitializeWithCouncilAndStake() public {
 // //         StandardToken token0 = new StandardToken("bean the token", "BEAN", 18);
 // //         StandardToken token1 = new StandardToken("SAMPLE", "SMP", 18);
 // //         vm.label(address(token0), "token 0");

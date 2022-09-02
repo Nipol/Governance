@@ -58,7 +58,7 @@ enum GovernanceErrors {
   INVALID_SIGNATURE_V = 'Governance__InvalidSignature_V',
 }
 
-describe('Governance', () => {
+describe.skip('Governance', () => {
   let Governance: Contract;
   let Token: Contract;
 

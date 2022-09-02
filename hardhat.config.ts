@@ -5,6 +5,7 @@ import '@nomiclabs/hardhat-solhint';
 import 'hardhat-gas-reporter';
 import 'solidity-coverage';
 import 'hardhat-deploy';
+import '@foundry-rs/hardhat-anvil';
 
 import { resolve } from 'path';
 import { config as dotenvConfig } from 'dotenv';
@@ -13,6 +14,36 @@ import { NetworkUserConfig } from 'hardhat/types';
 
 import fs from 'fs';
 import 'hardhat-preprocessor';
+
+interface AnvilOptions {
+  url: string;
+  accountKeysPath?: string; // Translates to: account_keys_path
+  accounts?: object[] | object;
+  hostname?: string;
+  allowUnlimitedContractSize?: boolean;
+  blockTime?: number;
+  launch?: boolean; // whether to launch the server at all
+  defaultBalanceEther?: number; // Translates to: default_balance_ether
+  forkUrl?: string | object;
+  forkBlockNumber?: string | number; // Translates to: fork_block_number
+  gasLimit?: number;
+  gasPrice?: string | number;
+  hdPath?: string; // Translates to: hd_path
+  mnemonic?: string;
+  path?: string; // path to the anvil exec
+  locked?: boolean;
+  noStorageCaching?: boolean;
+  hardfork?: string;
+  logger?: {
+    log(msg: string): void;
+  };
+  chainId?: number;
+  port?: number;
+  totalAccounts?: number; // Translates to: total_accounts
+  silent?: boolean;
+  vmErrorsOnRPCResponse?: boolean;
+  ws?: boolean;
+}
 
 function getRemappings() {
   return fs
@@ -99,7 +130,7 @@ function getOptimismConfig(network: keyof typeof chainIds, mainnet = false): Net
 }
 
 const config: HardhatUserConfig = {
-  defaultNetwork: 'hardhat',
+  defaultNetwork: 'anvil',
 
   namedAccounts: {
     deployer: 0,
@@ -120,6 +151,13 @@ const config: HardhatUserConfig = {
       accounts: {
         mnemonic,
         path: "m/44'/1'/0'/0",
+      },
+    },
+    anvil: {
+      url: 'http://127.0.0.1:8545/',
+      accounts: {
+        mnemonic,
+        path: "m/44'/60'/0'/0",
       },
     },
     coverage: {
