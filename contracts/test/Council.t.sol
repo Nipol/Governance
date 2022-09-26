@@ -13,7 +13,7 @@ import "UniswapV3Pack/v3-core/interfaces/IUniswapV3Pool.sol";
 import "UniswapV3Pack/v3-core/interfaces/IUniswapV3Factory.sol";
 import "UniswapV3Pack/v3-periphery/interfaces/ISwapRouter.sol";
 
-contract CouncilExistPoolTest {
+contract CouncilExistPoolTest is Test {
     uint16 proposalQuorum = 1000; // 10%
     uint16 voteQuorum = 7000; // 70%
     uint16 emergencyQuorum = 9500; // 95%
@@ -33,6 +33,7 @@ contract CouncilExistPoolTest {
     int24 upperTick;
 
     function setUp() public {
+        vm.createSelectFork(vm.rpcUrl("mainnet"));
         token0 = new StandardToken("bean the token", "BEAN", 18);
         token1 = new StandardToken("Wrapped Ether", "WETH", 18);
         initialPrice = Math.encodePriceSqrt(address(token0), address(token1), 1e18, 0.01 ether);
@@ -131,6 +132,7 @@ abstract contract ZeroState is Test {
     address base;
 
     function setUp() public virtual {
+        vm.createSelectFork(vm.rpcUrl("mainnet"));
         token0 = new StandardToken("bean the token", "BEAN", 18);
         token1 = new StandardToken("Wrapped Ether", "WETH", 18);
         base = address(token0);
@@ -259,7 +261,9 @@ contract CouncilDeployTest is ZeroState {
 
     function testStakeAndSwap() public {
         (address _token0, address _token1) = c.getTokens();
-        (bool isToken0Base, bool isToken1Base, address pair) = base == _token0 ? (true, false, _token1) : (false, true, _token0);
+        (bool isToken0Base, bool isToken1Base, address pair) = base == _token0
+            ? (true, false, _token1)
+            : (false, true, _token0);
 
         c.stake(
             ICouncil.StakeParam({

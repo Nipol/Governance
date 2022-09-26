@@ -6,14 +6,10 @@ library Math {
 
     error Overflow();
 
-    uint256 constant PRECISION = 2**96;
+    uint256 constant PRECISION = 2 ** 96;
 
     /// @notice Validates ticks to be multiples of tickSpacing
-    function validateTicks(
-        int24 tickSpacing,
-        int24 lowerTick,
-        int24 upperTick
-    ) public pure returns (int24, int24) {
+    function validateTicks(int24 tickSpacing, int24 lowerTick, int24 upperTick) public pure returns (int24, int24) {
         unchecked {
             if (lowerTick % tickSpacing != 0) {
                 lowerTick = lowerTick - (lowerTick % tickSpacing) + (lowerTick < 0 ? -tickSpacing : tickSpacing);
@@ -34,12 +30,7 @@ library Math {
 
     /// @notice Encodes R0 A0 = R1 A1, e.g. encodePriceSqrt(WETH, DAI, 1, 1000)
     ///         Would mean 1 WETH = 1000 DAI
-    function encodePriceSqrt(
-        address a0,
-        address a1,
-        uint256 r0,
-        uint256 r1
-    ) public pure returns (uint160) {
+    function encodePriceSqrt(address a0, address a1, uint256 r0, uint256 r1) public pure returns (uint160) {
         // 주소가 큰 것이, 뒤로 간다
         if (a0 > a1) {
             return encodePriceSqrt(r0, r1);
@@ -104,9 +95,7 @@ library Math {
             // since this case is rare, we choose to save gas on the assignment and
             // repeat division in the rare case.
             // If you don't care whether floor or ceil is returned, you can skip this.
-            if lt(div(x, z), z) {
-                z := div(x, z)
-            }
+            if lt(div(x, z), z) { z := div(x, z) }
         }
     }
 
@@ -116,11 +105,7 @@ library Math {
     /// @param denominator The divisor
     /// @return result The 256-bit result
     /// @dev See https://2π.com/21/muldiv
-    function mulDiv(
-        uint256 a,
-        uint256 b,
-        uint256 denominator
-    ) internal pure returns (uint256 result) {
+    function mulDiv(uint256 a, uint256 b, uint256 denominator) internal pure returns (uint256 result) {
         // 512-bit multiply [prod1 prod0] = a * b
         // Compute the product mod 2**256 and mod 2**256 - 1
         // then use the Chinese Remainder Theorem to reconstruct

@@ -147,13 +147,22 @@ contract Council is IERC165, ICouncil {
     }
 
     /**
+     * @notice 기본적으로 ETH는 받지 않도록 설정
+     */
+    receive() external payable {
+        revert();
+    }
+
+    /**
      * @notice  두 개의 토큰을 이용하여, 투표권으로 변환합니다.
      * @dev     추가되어야 할 수량값은 급격하게 가격이 변동하는 경우를 대비한 값이 입력되어야 합니다.
      * @param   params token0과 token1의 수량과 최소한 추가되어야 할 수량 값
      */
     function stake(StakeParam calldata params) external checkDeadline(params.deadline) {
         // 둘 다 0으로 들어오는 경우 실패
-        if (params.amount0Desired == 0 && params.amount1Desired == 0) revert();
+        if (params.amount0Desired == 0 && params.amount1Desired == 0) {
+            revert();
+        }
 
         address currentDelegatee = delegates[msg.sender];
         // 현재 포지션에 있는 유동성
@@ -170,7 +179,9 @@ contract Council is IERC165, ICouncil {
             params.amount1Desired
         );
 
-        if (liquidity == 0) revert();
+        if (liquidity == 0) {
+            revert();
+        }
 
         // 해당 시점에서, Council이 가지고 있는 토큰을 등록함
         (uint256 amount0, uint256 amount1) = IUniswapV3Pool(pool).mint(
@@ -182,7 +193,9 @@ contract Council is IERC165, ICouncil {
         );
 
         // 실제로 추가된 토큰 수량 체크
-        if (amount0 < params.amount0Min && amount1 < params.amount1Min) revert();
+        if (amount0 < params.amount0Min && amount1 < params.amount1Min) {
+            revert();
+        }
 
         // added totalShare
         uint256 existingShareSupply = latestTotalSupply();
@@ -214,11 +227,13 @@ contract Council is IERC165, ICouncil {
     /**
      * @notice  하나의 토큰만 예치하여, swap을 통해 희석한 다음 투표권으로 변환합니다.
      * @dev     추가되어야 할 수량값은 급격하게 가격이 변동하는 경우를 대비한 값이 입력되어야 합니다. param에 사용될 값은 `getSingleSidedAmount`
-     *          함수로 미리 계산되어야 합니다.
+     * 함수로 미리 계산되어야 합니다.
      * @param   params 추가할 총 토큰 수량, 교환할 토큰 수량, 최소로 교환된 토큰 수량, 입력되는 토큰이
      */
     function stake(StakeSingleParam calldata params) external checkDeadline(params.deadline) {
-        if (params.amountInForSwap > params.amountIn) revert();
+        if (params.amountInForSwap > params.amountIn) {
+            revert();
+        }
 
         address currentDelegatee = delegates[msg.sender];
         (address tokenIn, address tokenOut) = params.isAmountIn0 ? (token0, token1) : (token1, token0);
@@ -252,7 +267,9 @@ contract Council is IERC165, ICouncil {
             amount1
         );
 
-        if (liquidity == 0) revert();
+        if (liquidity == 0) {
+            revert();
+        }
 
         // this stage for token transfered
         (amount0, amount1) = IUniswapV3Pool(pool).mint(
@@ -300,8 +317,12 @@ contract Council is IERC165, ICouncil {
             require(success && data.length >= 32);
             uint256 dust1 = abi.decode(data, (uint256));
 
-            if (dust0 != 0) safeTransfer(token0, msg.sender, dust0);
-            if (dust1 != 0) safeTransfer(token1, msg.sender, dust1);
+            if (dust0 != 0) {
+                safeTransfer(token0, msg.sender, dust0);
+            }
+            if (dust1 != 0) {
+                safeTransfer(token1, msg.sender, dust1);
+            }
         }
     }
 
@@ -312,13 +333,17 @@ contract Council is IERC165, ICouncil {
      */
     function unstake(uint256 shares) external {
         // 0이 입력되는 경우에 실패되어야 합니다.
-        if (shares == 0) revert();
+        if (shares == 0) {
+            revert();
+        }
 
         // 현재 위임중인 물량과 현재 마지막 총 수량
         (address currentDelegatee, uint256 latestBalance) = (delegates[msg.sender], balances[msg.sender]);
 
         // 투표권이 현재 값보다 크다면 실패되어야 합니다.
-        if (shares > latestBalance) revert();
+        if (shares > latestBalance) {
+            revert();
+        }
 
         // 체크 포인트의 길이에 따라 마지막 총 수량을 가져옵니다.
         uint256 currentTotalSupply = latestTotalSupply();
@@ -376,9 +401,13 @@ contract Council is IERC165, ICouncil {
      */
     function withdraw(address queue) external {
         WithdrawPoint memory wp = withdraws[msg.sender];
-        if (wp.timestamp == 0) revert();
+        if (wp.timestamp == 0) {
+            revert();
+        }
         unchecked {
-            if (wp.timestamp + slot.withdrawDelay > uint64(block.timestamp)) revert();
+            if (wp.timestamp + slot.withdrawDelay > uint64(block.timestamp)) {
+                revert();
+            }
         }
 
         safeTransfer(token0, queue, wp.amount0);
@@ -392,10 +421,14 @@ contract Council is IERC165, ICouncil {
      * @param   delegatee 위임하고자 하는 대상의 주소
      */
     function delegate(address delegatee) external {
-        if (delegatee == address(0)) revert NotAllowedAddress(delegatee);
+        if (delegatee == address(0)) {
+            revert NotAllowedAddress(delegatee);
+        }
         (address currentDelegate, uint256 latestBalance) = (delegates[msg.sender], balances[msg.sender]);
 
-        if (latestBalance == 0) revert NotEnoughVotes();
+        if (latestBalance == 0) {
+            revert NotEnoughVotes();
+        }
 
         if (currentDelegate != delegatee) {
             delegateVotes(currentDelegate, delegatee, latestBalance);
@@ -406,7 +439,7 @@ contract Council is IERC165, ICouncil {
     /**
      * @notice  토큰을 하나만 주입했을 때, 얻을 수 있는 투표권의 수치와 얼마만큼을 교환하는데 사용하는지 반환합니다.
      * @dev     해당 함수는 상태를 변경하지 않고 많은 반복문을 이용하기 때문에, On-chain Tx로 사용되기에 적합하지 않습니다.
-     *          이 컨트랙트를 수정하여 사용하는 경우, 토큰이 지원하는 소수점에 따라 Dust 수량을 재조정할 필요가 있습니다.
+     * 이 컨트랙트를 수정하여 사용하는 경우, 토큰이 지원하는 소수점에 따라 Dust 수량을 재조정할 필요가 있습니다.
      * @param   amountIn        주입하고자 하는 토큰 수량
      * @param   isAmountIn0     주입하고자 하는 토큰이 token0 라면 활성화
      * @return  liquidity       하나의 토큰을 주입하고서 반환되는 투표권 수량
@@ -510,14 +543,24 @@ contract Council is IERC165, ICouncil {
         uint256 amount1Owed,
         bytes calldata data
     ) external {
-        if (msg.sender != pool) revert();
+        if (msg.sender != pool) {
+            revert();
+        }
         address from = abi.decode(data, (address));
         if (from != address(this)) {
-            if (amount0Owed != 0) safeTransferFrom(token0, from, pool, amount0Owed);
-            if (amount1Owed != 0) safeTransferFrom(token1, from, pool, amount1Owed);
+            if (amount0Owed != 0) {
+                safeTransferFrom(token0, from, pool, amount0Owed);
+            }
+            if (amount1Owed != 0) {
+                safeTransferFrom(token1, from, pool, amount1Owed);
+            }
         } else if (from == address(this)) {
-            if (amount0Owed != 0) safeTransfer(token0, pool, amount0Owed);
-            if (amount1Owed != 0) safeTransfer(token1, pool, amount1Owed);
+            if (amount0Owed != 0) {
+                safeTransfer(token0, pool, amount0Owed);
+            }
+            if (amount1Owed != 0) {
+                safeTransfer(token1, pool, amount1Owed);
+            }
         }
     }
 
@@ -537,85 +580,110 @@ contract Council is IERC165, ICouncil {
      * @return  votes 투표 권한
      */
     function getPriorVotes(address target, uint256 blockNumber) public view returns (uint256 votes) {
-        if (blockNumber > block.number) revert();
+        if (blockNumber > block.number) {
+            revert();
+        }
         votes = _checkpointsLookup(checkpoints[target], blockNumber);
     }
 
     /**
-     * @notice BlockNumber를 기준으로, target의 투표권을 비율화 하여 가져옵니다.
-     * @param target 대상이 되는 주소
-     * @param blockNumber 기반이 되는 블록 숫자
-     * @return rate 비율
+     * @notice  블록 숫자를 기준으로, target의 투표권을 비율화 하여 가져옵니다.
+     * @param   target 대상이 되는 주소
+     * @param   blockNumber 기반이 되는 블록 숫자
+     * @return  rate 해당 지갑 주소가 가지는 투표권 비율
      */
     function getPriorRate(address target, uint256 blockNumber) public view returns (uint256 rate) {
-        if (blockNumber > block.number) revert();
+        if (blockNumber > block.number) {
+            revert();
+        }
         rate =
             (_checkpointsLookup(checkpoints[target], blockNumber) * 1e4) /
             _checkpointsLookup(totalCheckpoints, blockNumber);
     }
 
     /**
-     * @notice BlockNumber를 기준으로, 특정 수치의 투표권을 총 투표권의 비율로 계산하는 함수
-     * @param votes 계산하고자 하는 투표권한
-     * @param blockNumber 기반이 되는 블록 숫자
+     * @notice  블록 숫자를 기준으로, 특정 수치의 투표권을 총 투표권의 비율로 계산하는 함수
+     * @param   votes 계산하고자 하는 투표권 수량
+     * @param   blockNumber 기반이 되는 블록 숫자
+     * @return  rate 해당 투표권 수량에 따른 투표권 비율
      */
     function getVotesToRate(uint256 votes, uint256 blockNumber) public view returns (uint256 rate) {
-        if (blockNumber > block.number) revert();
+        if (blockNumber > block.number) {
+            revert();
+        }
         rate = (votes * 1e4) / _checkpointsLookup(totalCheckpoints, blockNumber);
     }
 
     /**
-     * @notice 입력된 블록을 기준하여, 총 투표권을 반환합니다.
-     * @param blockNumber 기반이 되는 블록 숫자
-     * @return totalVotes 총 투표권
+     * @notice  입력된 블록 숫자를 기준하여, 총 투표권을 반환합니다.
+     * @param   blockNumber 기반이 되는 블록 숫자
+     * @return  totalVotes 해당 블록의 총 투표권
      */
     function getPriorTotalSupply(uint256 blockNumber) public view returns (uint256 totalVotes) {
-        if (blockNumber > block.number) revert();
+        if (blockNumber > block.number) {
+            revert();
+        }
         totalVotes = _checkpointsLookup(totalCheckpoints, blockNumber);
     }
 
     /**
-     * @notice 특정 주소의 총 예치 수량을 반환합니다.
+     * @notice  특정 주소의 총 예치된 유동성을 반환합니다.
+     * @param   target 대상이 되는 주소
+     * @return  balance 반횐되는 예치된 유동성 수량
      */
     function balanceOf(address target) public view returns (uint256 balance) {
         balance = balances[target];
     }
 
     /**
-     * @notice 특정 주소의 총 투표권을 반환합니다.
+     * @notice  특정 주소의 총 투표권을 반환합니다.
+     * @param   target 대상이 되는 주소
+     * @return  votes 반횐되는 투표권
      */
     function voteOf(address target) public view returns (uint256 votes) {
         uint256 length = checkpoints[target].length;
         unchecked {
-            votes = length != 0 ? checkpoints[target][length - 1].votes : 0;
+            if (length != 0) {
+                votes = checkpoints[target][length - 1].votes;
+            }
         }
     }
 
     /**
-     * @notice 특정 주소가 투표권을 위임하고 있는 주소를 반환합니다.
+     * @notice  특정 주소가 투표권을 위임하고 있는 주소를 반환합니다.
+     * @param   target 대상이 되는 주소
+     * @return  delegatee 위임한 대상의 주소
      */
     function getDelegate(address target) public view returns (address delegatee) {
         delegatee = delegates[target];
     }
 
-    // 총 투표권 수량
+    /**
+     * @notice  총 투표권 수량을 반환합니다.
+     * @return  amount 총 투표권 수량
+     */
     function totalSupply() public view returns (uint256 amount) {
+        uint256 length = totalCheckpoints.length;
         unchecked {
-            uint256 length = totalCheckpoints.length;
-            amount = length != 0 ? totalCheckpoints[length - 1].votes : 0;
+            if (length != 0) {
+                amount = totalCheckpoints[length - 1].votes;
+            }
         }
     }
 
+    /**
+     * @notice  투표권을 구성하는 두 개의 토큰 주소를 반환합니다.
+     */
     function getTokens() public view returns (address, address) {
         return (token0, token1);
     }
 
     /**
-     * @notice amount 수량만큼, from으로 부터 to로 이관합니다.
-     * @dev from이 Zero Address라면, 새로운 amount를 등록하는 것이며, to가 Zero Address라면 기존에 있던 amount를 감소시킵니다.
-     * @param from 위임을 부여할 대상
-     * @param to 위임이 이전될 대상
-     * @param amount 위임 수량
+     * @notice  amount 만큼, 투표권을 from으로 부터 to로 이관합니다.
+     * @dev     from이 Zero Address라면, 새로운 amount를 등록하는 것이며, to가 Zero Address라면 기존에 있던 amount를 감소시킵니다.
+     * @param   from 위임을 부여할 대상
+     * @param   to 위임이 이전될 대상
+     * @param   amount 위임 수량
      */
     function delegateVotes(
         address from,
@@ -635,41 +703,174 @@ contract Council is IERC165, ICouncil {
         }
     }
 
-    function writeCheckpoint(
-        Checkpoint[] storage ckpts,
-        function(uint128, uint128) view returns (uint128) op,
-        uint256 delta
-    ) internal returns (uint128 oldWeight, uint128 newWeight) {
-        uint256 length = ckpts.length;
-        oldWeight = length != 0 ? ckpts[length - 1].votes : 0;
-        newWeight = op(oldWeight, uint128(delta));
+    /**
+     * @notice 거버넌스로 제안서를 보내는 역할을 하며, 해당 컨트랙트에서도 투표만을 위한 제안서를 동일하게 생성한다.
+     * @param governance Council이 목표로 하는 거버넌스 컨트랙트 주소
+     * @param spells GPE-command array
+     * @param elements variable for commands array
+     */
+    function propose(
+        address governance,
+        bytes32[] calldata spells,
+        bytes[] calldata elements
+    ) external {
+        Slot memory s = slot;
+        // 현재로 부터 한 블럭 이전 기준으로 msg.sender의 제안 권한이 최소 쿼럼을 만족하는지 체크
+        if (getPriorRate(msg.sender, block.number - 1) < s.proposalQuorum) {
+            revert Council__NotReachedQuorum();
+        }
 
-        if (length > 0 && ckpts[length - 1].fromBlock == block.number) {
-            ckpts[length - 1].votes = newWeight;
+        // 투표 시작 지연 추가
+        uint32 start = uint32(block.timestamp) + s.voteStartDelay;
+        uint32 end = start + s.votePeriod;
+        // 거버넌스에 등록할 proposal 정보
+        IGovernance.ProposalParams memory params = IGovernance.ProposalParams({
+            proposer: msg.sender,
+            spells: spells,
+            elements: elements
+        });
+
+        // 거버넌스 컨트랙트에 proposal 등록
+        bytes32 proposalId = IGovernance(governance).propose(params);
+        // 반횐된 uid에 대해 council 버전의 proposal 저장.
+        (ProposalState state, Proposal storage p) = getProposalState(proposalId);
+        // 한번도 사용되지 않은 유니크 아이디인지 확인
+        if (state != ProposalState.UNKNOWN) {
+            revert Council__AlreadyProposed(proposalId);
+        }
+
+        (p.governance, p.startTime, p.endTime, p.blockNumber, p.spells, p.elements) = (
+            governance,
+            start,
+            end,
+            uint32(block.number), // block number for Verification.
+            spells,
+            elements
+        );
+        emit Proposed(proposalId);
+    }
+
+    /**
+     * TODO: 전용 구조체, 전용 이벤트, 날짜 uint8로 변경
+     * @notice 응급 제안서를 처리하기 위한 전용함수
+     * @param governance Council이 목표로 하는 거버넌스 컨트랙트 주소
+     * @param spells GPE-command array
+     * @param elements variable for commands array
+     */
+    function emergencyProposal(
+        address governance,
+        bytes32[] memory spells,
+        bytes[] calldata elements
+    ) external {}
+
+    /**
+     * @notice 제안서에 투표를 하며, 투표 상태가 활성화 되어 있어야만 가능 함.
+     * 투표를 변경하는 경우 변경에 필요한 지연이 충분히 지나고, 이전 투표를 새 투표로 옮김
+     * @param proposalId 제안서의 고유 아이디
+     * @param support 해시 형태로, 어떤 값에 투표할 것인지 -> 값의 스펙트럼이 넓은 이유는 off-chain vote를 위한 것
+     */
+    function vote(bytes32 proposalId, bool support) external {
+        (ProposalState state, Proposal storage p) = getProposalState(proposalId);
+        // 존재하는 Proposal인지 & 활성 상태인지 확인
+        if (state != ProposalState.ACTIVE) {
+            revert Council__NotActiveProposal(proposalId);
+        }
+        // 기록된 블록의 - 1 기준으로 투표권 확인
+        uint256 power = getPriorVotes(msg.sender, p.blockNumber - 1);
+        // 제안서의 현재 투표 상태
+        Vote storage v = p.votes[msg.sender];
+        // timestamp 0인지 체크 -> 처음 투표 과정(support 에 따라서 파워 기록, votes에 기록)
+        if (v.ts == 0) {
+            v.ts = uint32(block.timestamp);
+            v.state = support ? VoteState.YEA : VoteState.NAY;
+            p.yea += support ? uint96(power) : 0;
+            p.nay += support ? 0 : uint96(power);
+            p.totalVotes += uint96(power);
         } else {
-            ckpts.push(Checkpoint({fromBlock: uint32(block.number), votes: newWeight}));
+            // 투표 변경 딜레이 확인
+            if ((v.ts + slot.voteChangableDelay) > uint32(block.timestamp)) {
+                revert Council__NotReachedDelay();
+            }
+            if (!support ? p.nay > 0 : p.yea > 0) {
+                revert Council__AlreadyVoted(proposalId, support);
+            }
+            // 새로운 타임스탬프 기록
+            v.ts = uint32(block.timestamp);
+            // 이전 투표 파워 삭제
+            p.yea -= support ? 0 : uint96(power);
+            p.nay -= support ? uint96(power) : 0;
+            // 새로운 투표 상태 업데이트
+            v.state = support ? VoteState.YEA : VoteState.NAY;
+            // 새로운 투표 파워 업데이트
+            p.yea += support ? uint96(power) : 0;
+            p.nay += support ? 0 : uint96(power);
+        }
+        emit Voted(msg.sender, proposalId, power);
+    }
+
+    /**
+     * @notice 투표 기간이 종료 되었을 때 투표 상태를 검증하여, 거버넌스로 투표 정보에 따른 실행 여부를 전송함.
+     * @param proposalId 제안서의 고유 아이디
+     * @return success 해당 제안서가 검증을 통과했는지 여부
+     */
+    function resolve(bytes32 proposalId) external returns (bool success) {
+        (ProposalState state, Proposal storage p) = getProposalState(proposalId);
+        if (state != ProposalState.STANDBY) {
+            revert Council__NotResolvable(proposalId);
+        }
+        // 총 투표량이 쿼럼을 넘는지 체크
+        if (getVotesToRate(p.totalVotes, p.blockNumber - 1) < slot.voteQuorum) {
+            revert Council__NotReachedQuorum();
+        }
+
+        // yea > nay -> queued -> 거버넌스의 대기열에 등록
+        // nay < yea -> leftout -> 거버넌스의 canceling
+        (p.queued, p.leftout) = p.yea > p.nay
+            ? (IGovernance(p.governance).approve(proposalId), false)
+            : (false, IGovernance(p.governance).drop(proposalId));
+        success = true;
+        emit Resolved(proposalId);
+    }
+
+    function supportsInterface(bytes4 interfaceID) external pure returns (bool) {
+        return interfaceID == type(ICouncil).interfaceId || interfaceID == type(IERC165).interfaceId;
+    }
+
+    function getProposalState(bytes32 proposalId) internal view returns (ProposalState state, Proposal storage p) {
+        p = proposals[proposalId];
+
+        if (p.startTime == 0) {
+            // 시작시간 0이면 등록되지 않은 제안서
+            state = ProposalState.UNKNOWN;
+        } else if (p.startTime > uint32(block.timestamp)) {
+            // 제안서에 기록된 시작 시간이 현재 시간 보다 클 때: 투표 대기중
+            state = ProposalState.PENDING;
+        } else if (p.startTime <= uint32(block.timestamp) && p.endTime > uint32(block.timestamp)) {
+            // 제안서에 기록된 시작 시간이 현재 시간보다 작으며, 종료 시간이 현재 시간보다 클 때: 투표 중
+            state = ProposalState.ACTIVE;
+        } else if (p.startTime < uint32(block.timestamp) && p.endTime <= uint32(block.timestamp)) {
+            state = p.queued == true ? ProposalState.QUEUED : p.leftout == true
+                ? ProposalState.LEFTOUT
+                : ProposalState.STANDBY;
         }
     }
 
-    function _checkpointsLookup(Checkpoint[] storage ckpts, uint256 blockNumber) private view returns (uint256 votes) {
-        uint256 high = ckpts.length;
-        uint256 low = 0;
-        uint256 mid;
-        while (low < high) {
-            unchecked {
-                mid = ((low & high) + (low ^ high) / 2);
-            }
-            if (ckpts[mid].fromBlock > blockNumber) {
-                high = mid;
-            } else {
-                unchecked {
-                    low = mid + 1;
-                }
-            }
+    function name() public pure returns (string memory) {
+        // Council
+        // solhint-disable-next-line no-inline-assembly
+        assembly {
+            mstore(0x20, 0x20)
+            mstore(0x47, 0x07436f756e63696c)
+            return(0x20, 0x60)
         }
+    }
 
+    function latestTotalSupply() internal view returns (uint256 supply) {
+        uint256 length = totalCheckpoints.length;
         unchecked {
-            votes = high != 0 ? ckpts[high - 1].votes : 0;
+            if (length != 0) {
+                supply = totalCheckpoints[length - 1].votes;
+            }
         }
     }
 
@@ -810,191 +1011,53 @@ contract Council is IERC165, ICouncil {
     }
 
     /**
-     * @notice 현재 컨트랙트에서 일치하지 않는 인터페이스를 voteModule로 이관하기 위한
+     * @notice  투표권을 업데이트하는데 사용하는 함수입니다.
+     * @param   ckpts 업데이트 하고자 하는 Checkpoint 위치
+     * @param   op function(uint128,uint128) 함수 포인터
+     * @param   delta 증/경감하고자 하는 값
      */
-    // fallback() external payable {
-    //     address module = voteModule;
-    //     assembly {
-    //         // copy function selector and any arguments
-    //         calldatacopy(0, 0, calldatasize())
-    //         // execute function call using the facet
-    //         let result := delegatecall(gas(), module, 0, calldatasize(), 0, 0)
-    //         // get any return value
-    //         returndatacopy(0, 0, returndatasize())
-    //         // return any return value or error back to the caller
-    //         switch result
-    //         case 0 {
-    //             revert(0, returndatasize())
-    //         }
-    //         default {
-    //             return(0, returndatasize())
-    //         }
-    //     }
-    // }
+    function writeCheckpoint(
+        Checkpoint[] storage ckpts,
+        function(uint128, uint128) view returns (uint128) op,
+        uint256 delta
+    ) internal returns (uint128 oldWeight, uint128 newWeight) {
+        uint256 length = ckpts.length;
+        oldWeight = length != 0 ? ckpts[length - 1].votes : 0;
+        newWeight = op(oldWeight, uint128(delta));
 
-    receive() external payable {
-        revert();
-    }
-
-    // function initialVoteModule(address voteModuleAddr) external {
-    //     if (voteModule != address(0)) revert();
-    //     voteModule = voteModuleAddr;
-    // }
-
-    /**
-     * @notice 거버넌스로 제안서를 보내는 역할을 하며, 해당 컨트랙트에서도 투표만을 위한 제안서를 동일하게 생성한다.
-     * @param governance Council이 목표로 하는 거버넌스 컨트랙트 주소
-     * @param spells GPE-command array
-     * @param elements variable for commands array
-     */
-    function propose(
-        address governance,
-        bytes32[] calldata spells,
-        bytes[] calldata elements
-    ) external {
-        Slot memory s = slot;
-        // 한 블럭 이전 or 지난 epoch에, msg.sender의 보팅 권한이 최소 쿼럼을 만족하는지 체크
-        if (getPriorRate(msg.sender, block.number - 1) < s.proposalQuorum) revert Council__NotReachedQuorum();
-
-        // 투표 시작 지연 추가
-        uint32 start = uint32(block.timestamp) + s.voteStartDelay;
-        uint32 end = start + s.votePeriod;
-        // 거버넌스에 등록할 proposal 정보
-        IGovernance.ProposalParams memory params = IGovernance.ProposalParams({
-            proposer: msg.sender,
-            spells: spells,
-            elements: elements
-        });
-
-        // 거버넌스 컨트랙트에 proposal 등록
-        (bytes32 proposalId, ) = IGovernance(governance).propose(params);
-        // 반횐된 uid에 대해 council 버전의 proposal 저장.
-        (ProposalState state, Proposal storage p) = getProposalState(proposalId);
-        // 한번도 사용되지 않은 유니크 아이디인지 확인
-        if (state != ProposalState.UNKNOWN) revert Council__AlreadyProposed(proposalId);
-
-        (p.governance, p.startTime, p.endTime, p.timestamp, p.blockNumber, p.spells, p.elements) = (
-            governance,
-            start,
-            end,
-            uint32(block.timestamp), // block timestamp for Verification.
-            uint32(block.number), // block number for Verification.
-            spells,
-            elements
-        );
-        // p.epoch = 0 // Epoch logic... TODO
-        emit Proposed(proposalId);
-    }
-
-    /**
-     * TODO: 전용 구조체, 전용 이벤트, 날짜 uint8로 변경
-     * @notice 응급 제안서를 처리하기 위한 전용함수
-     * @param governance Council이 목표로 하는 거버넌스 컨트랙트 주소
-     * @param spells GPE-command array
-     * @param elements variable for commands array
-     */
-    function emergencyProposal(
-        address governance,
-        bytes32[] memory spells,
-        bytes[] calldata elements
-    ) external {}
-
-    /**
-     * @notice 제안서에 투표를 하며, 투표 상태가 활성화 되어 있어야만 가능 함.
-     * 투표를 변경하는 경우 변경에 필요한 지연이 충분히 지나고, 이전 투표를 새 투표로 옮김
-     * @param proposalId 제안서의 고유 아이디
-     * @param support 해시 형태로, 어떤 값에 투표할 것인지 -> 값의 스펙트럼이 넓은 이유는 off-chain vote를 위한 것
-     */
-    function vote(bytes32 proposalId, bool support) external {
-        (ProposalState state, Proposal storage p) = getProposalState(proposalId);
-        // 존재하는 Proposal인지 & 활성 상태인지 확인
-        if (state != ProposalState.ACTIVE) revert Council__NotActiveProposal(proposalId);
-        // 기록된 블록의 - 1 기준으로 투표권 확인
-        uint256 power = getPriorVotes(msg.sender, p.blockNumber - 1);
-        // 제안서의 현재 투표 상태
-        Vote storage v = p.votes[msg.sender];
-        // timestamp 0인지 체크 -> 처음 투표 과정(support 에 따라서 파워 기록, votes에 기록)
-        if (v.ts == 0) {
-            v.ts = uint32(block.timestamp);
-            v.state = support ? VoteState.YEA : VoteState.NAY;
-            p.yea += support ? uint96(power) : 0;
-            p.nay += support ? 0 : uint96(power);
-            p.totalVotes += uint96(power);
+        if (length > 0 && ckpts[length - 1].fromBlock == block.number) {
+            ckpts[length - 1].votes = newWeight;
         } else {
-            // 투표 변경 딜레이 확인
-            if ((v.ts + slot.voteChangableDelay) > uint32(block.timestamp)) revert Council__NotReachedDelay();
-            if (!support ? p.nay > 0 : p.yea > 0) revert Council__AlreadyVoted(proposalId, support);
-            // 새로운 타임스탬프 기록
-            v.ts = uint32(block.timestamp);
-            // 이전 투표 파워 삭제
-            p.yea -= support ? 0 : uint96(power);
-            p.nay -= support ? uint96(power) : 0;
-            // 새로운 투표 상태 업데이트
-            v.state = support ? VoteState.YEA : VoteState.NAY;
-            // 새로운 투표 파워 업데이트
-            p.yea += support ? uint96(power) : 0;
-            p.nay += support ? 0 : uint96(power);
+            ckpts.push(Checkpoint({fromBlock: uint32(block.number), votes: newWeight}));
         }
-        emit Voted(msg.sender, proposalId, power);
     }
 
     /**
-     * @notice 투표 기간이 종료 되었을 때 투표 상태를 검증하여, 거버넌스로 투표 정보에 따른 실행 여부를 전송함.
-     * @param proposalId 제안서의 고유 아이디
-     * @return success 해당 제안서가 검증을 통과했는지 여부
+     * @notice  저장된 체크포인트에서 블록 숫자를 기반한 투표권을 가져오는 내부 함수
+     * @dev     내장 함수입니다.
+     * @param   ckpts 체크포인트 배열
+     * @param   blockNumber 기준하는 블록 숫자
+     * @return  votes 투표권 수량
      */
-    function resolve(bytes32 proposalId) external returns (bool success) {
-        (ProposalState state, Proposal storage p) = getProposalState(proposalId);
-        if (state != ProposalState.STANDBY) revert Council__NotResolvable(proposalId);
-        // 총 투표량이 쿼럼을 넘는지 체크
-        if (getVotesToRate(p.totalVotes, p.blockNumber - 1) < slot.voteQuorum) revert Council__NotReachedQuorum();
-
-        // yea > nay -> queued -> 거버넌스의 대기열에 등록
-        // nay < yea -> leftout -> 거버넌스의 canceling
-        (p.queued, p.leftout) = p.yea > p.nay
-            ? (IGovernance(p.governance).approve(proposalId), false)
-            : (false, IGovernance(p.governance).drop(proposalId));
-        success = true;
-        emit Resolved(proposalId);
-    }
-
-    function supportsInterface(bytes4 interfaceID) external pure returns (bool) {
-        return interfaceID == type(ICouncil).interfaceId || interfaceID == type(IERC165).interfaceId;
-    }
-
-    function getProposalState(bytes32 proposalId) internal view returns (ProposalState state, Proposal storage p) {
-        p = proposals[proposalId];
-
-        if (p.startTime == 0) {
-            // 시작시간 0이면 등록되지 않은 제안서
-            state = ProposalState.UNKNOWN;
-        } else if (p.startTime > uint32(block.timestamp)) {
-            // 제안서에 기록된 시작 시간이 현재 시간 보다 클 때: 투표 대기중
-            state = ProposalState.PENDING;
-        } else if (p.startTime <= uint32(block.timestamp) && p.endTime > uint32(block.timestamp)) {
-            // 제안서에 기록된 시작 시간이 현재 시간보다 작으며, 종료 시간이 현재 시간보다 클 때: 투표 중
-            state = ProposalState.ACTIVE;
-        } else if (p.startTime < uint32(block.timestamp) && p.endTime <= uint32(block.timestamp)) {
-            state = p.queued == true ? ProposalState.QUEUED : p.leftout == true
-                ? ProposalState.LEFTOUT
-                : ProposalState.STANDBY;
+    function _checkpointsLookup(Checkpoint[] storage ckpts, uint256 blockNumber) private view returns (uint256 votes) {
+        uint256 high = ckpts.length;
+        uint256 low = 0;
+        uint256 mid;
+        while (low < high) {
+            unchecked {
+                mid = ((low & high) + (low ^ high) / 2);
+            }
+            if (ckpts[mid].fromBlock > blockNumber) {
+                high = mid;
+            } else {
+                unchecked {
+                    low = mid + 1;
+                }
+            }
         }
-    }
 
-    function name() public pure returns (string memory) {
-        // Council
-        // solhint-disable-next-line no-inline-assembly
-        assembly {
-            mstore(0x20, 0x20)
-            mstore(0x47, 0x07436f756e63696c)
-            return(0x20, 0x60)
-        }
-    }
-
-    function latestTotalSupply() internal view returns (uint256 supply) {
-        uint256 length = totalCheckpoints.length;
         unchecked {
-            if (length != 0) supply = totalCheckpoints[length - 1].votes;
+            votes = high != 0 ? ckpts[high - 1].votes : 0;
         }
     }
 }

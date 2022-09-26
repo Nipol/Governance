@@ -21,10 +21,9 @@ interface IGovernance is IERC165, IERC1271, IERC721TokenReceiver, IERC1155TokenR
     }
 
     struct Proposal {
-        uint96 id; // remain 160 bit
-        bytes16 magichash; // remain 32 bit
-        ProposalState state; // remain 24 bit
-        uint24 dummy; // dummy
+        bytes32[] spells;
+        bytes[] elements;
+        ProposalState state;
     }
 
     struct ProposalParams {
@@ -40,14 +39,7 @@ interface IGovernance is IERC165, IERC1271, IERC721TokenReceiver, IERC1155TokenR
     }
 
     event Proposed(
-        bytes32 indexed proposalId,
-        string version,
-        uint96 id,
-        address indexed council,
-        address indexed proposer,
-        bytes32[] spells,
-        bytes[] elements,
-        bytes16 magichash
+        bytes32 indexed proposalId, string version, uint96 nonce, address indexed council, address indexed proposer
     );
 
     event Approved(bytes32 indexed proposalId);
@@ -62,17 +54,13 @@ interface IGovernance is IERC165, IERC1271, IERC721TokenReceiver, IERC1155TokenR
 
     function nonce() external view returns (uint96);
 
-    function propose(ProposalParams calldata params) external returns (bytes32 proposalId, uint96 id);
+    function propose(ProposalParams calldata params) external returns (bytes32 proposalId);
 
     function approve(bytes32 proposalId) external returns (bool);
 
     function drop(bytes32 proposalId) external returns (bool);
 
-    function execute(
-        bytes32 proposalId,
-        bytes32[] calldata spells,
-        bytes[] calldata elements
-    ) external;
+    function execute(bytes32 proposalId) external;
 
     function changeCouncil(address councilAddr) external;
 

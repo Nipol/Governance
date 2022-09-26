@@ -7,7 +7,14 @@
       "UPGRADE_PACKAGES": "true"
     }
   },
-  "runArgs": ["--init", "--privileged", "-v", "${env:HOME}${env:USERPROFILE}/.ssh:/home/node/.ssh-localhost:ro"],
+  "runArgs": [
+    "--init",
+    "--dns",
+    "1.1.1.1",
+    "--privileged",
+    "-v",
+    "${env:HOME}${env:USERPROFILE}/.ssh:/home/node/.ssh-localhost:ro"
+  ],
   "mounts": [
     "source=dind-var-lib-docker,target=/var/lib/docker,type=volume",
     "source=governance-node-node_modules,target=${containerWorkspaceFolder}/node_modules,type=volume"
@@ -18,7 +25,8 @@
   "remoteUser": "node",
   "remoteEnv": {
     "PATH": "${containerEnv:PATH}:/home/node/.local/bin:/home/node/.foundry/bin",
-    "SOLC_VERSION": "0.8.16"
+    "SOLC_VERSION": "0.8.17",
+    "MAINNET_RPC_URL": ""
   },
 
   // Set *default* container specific settings.json values on container create.
@@ -43,7 +51,7 @@
     ],
     "solidity.linter": "solhint",
     "solidity.formatter": "prettier",
-    "solidity.compileUsingRemoteVersion": "0.8.15",
+    "solidity.compileUsingRemoteVersion": "0.8.17",
     "solidity.enableLocalNodeCompiler": false,
     "search.exclude": { "lib": true },
     "git.ignoreLimitWarning": true,
