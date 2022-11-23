@@ -5,11 +5,54 @@ import '@nomiclabs/hardhat-solhint';
 import 'hardhat-gas-reporter';
 import 'solidity-coverage';
 import 'hardhat-deploy';
+import '@foundry-rs/hardhat-anvil';
 
 import { resolve } from 'path';
 import { config as dotenvConfig } from 'dotenv';
 import { HardhatUserConfig } from 'hardhat/config';
 import { NetworkUserConfig } from 'hardhat/types';
+
+import fs from 'fs';
+import 'hardhat-preprocessor';
+
+interface AnvilOptions {
+  url: string;
+  accountKeysPath?: string; // Translates to: account_keys_path
+  accounts?: object[] | object;
+  hostname?: string;
+  allowUnlimitedContractSize?: boolean;
+  blockTime?: number;
+  launch?: boolean; // whether to launch the server at all
+  defaultBalanceEther?: number; // Translates to: default_balance_ether
+  forkUrl?: string | object;
+  forkBlockNumber?: string | number; // Translates to: fork_block_number
+  gasLimit?: number;
+  gasPrice?: string | number;
+  hdPath?: string; // Translates to: hd_path
+  mnemonic?: string;
+  path?: string; // path to the anvil exec
+  locked?: boolean;
+  noStorageCaching?: boolean;
+  hardfork?: string;
+  logger?: {
+    log(msg: string): void;
+  };
+  chainId?: number;
+  port?: number;
+  totalAccounts?: number; // Translates to: total_accounts
+  silent?: boolean;
+  vmErrorsOnRPCResponse?: boolean;
+  ws?: boolean;
+}
+
+function getRemappings() {
+  return fs
+    .readFileSync('remappings.txt', 'utf8')
+    .split('\n')
+    .filter(Boolean) // remove empty lines
+    .filter(line => !line.match('node_modules'))
+    .map(line => line.trim().split('='));
+}
 
 const { TASK_COMPILE_SOLIDITY_GET_SOURCE_PATHS } = require('hardhat/builtin-tasks/task-names');
 subtask(TASK_COMPILE_SOLIDITY_GET_SOURCE_PATHS).setAction(async (_, __, runSuper) => {
@@ -87,7 +130,7 @@ function getOptimismConfig(network: keyof typeof chainIds, mainnet = false): Net
 }
 
 const config: HardhatUserConfig = {
-  defaultNetwork: 'hardhat',
+  defaultNetwork: 'anvil',
 
   namedAccounts: {
     deployer: 0,
@@ -110,6 +153,13 @@ const config: HardhatUserConfig = {
         path: "m/44'/1'/0'/0",
       },
     },
+    anvil: {
+      url: 'http://127.0.0.1:8545/',
+      accounts: {
+        mnemonic,
+        path: "m/44'/60'/0'/0",
+      },
+    },
     coverage: {
       url: 'http://localhost:8555',
     },
@@ -124,7 +174,7 @@ const config: HardhatUserConfig = {
   solidity: {
     compilers: [
       {
-        version: '0.8.13',
+        version: '0.8.17',
         settings: {
           viaIR: true,
           optimizer: {
@@ -158,6 +208,22 @@ const config: HardhatUserConfig = {
     tests: './test',
     cache: './hh-cache',
     artifacts: './artifacts',
+  },
+
+  // This fully resolves paths for imports in the ./lib directory for Hardhat
+  preprocess: {
+    eachLine: hre => ({
+      transform: (line: string) => {
+        if (line.match(/^\s*import /i)) {
+          getRemappings().forEach(([find, replace]) => {
+            if (line.match(find)) {
+              line = line.replace(find, replace);
+            }
+          });
+        }
+        return line;
+      },
+    }),
   },
 
   etherscan: {

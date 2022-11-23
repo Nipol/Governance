@@ -1,1 +1,5 @@
-ds-test/=lib/ds-test/src/
+@beandao/=node_modules/@beandao/
+base64-sol/=node_modules/base64-sol/
+hardhat/=node_modules/hardhat/
+forge-std/=lib/forge-std/src/
+UniswapV3Pack/=lib/UniswapV3Pack/src/

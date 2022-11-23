@@ -3,38 +3,42 @@
   "build": {
     "dockerfile": "Dockerfile",
     "args": {
-      "VARIANT": "16-bullseye", // if you are x86-64 remove the "-bullseye"
-      "UPGRADE_PACKAGES": "true"
+      // Update 'VARIANT' to pick a Node version: 18, 16, 14.
+      // Append -bullseye or -buster to pin to an OS version.
+      // Use -bullseye variants on local on arm64/Apple Silicon.
+      "VARIANT": "16-bullseye"
     }
   },
-  "runArgs": ["--init", "--privileged", "-v", "${env:HOME}${env:USERPROFILE}/.ssh:/home/node/.ssh-localhost:ro"],
+  "runArgs": ["--init", "--dns", "1.1.1.1", "--privileged"],
   "mounts": [
     "source=dind-var-lib-docker,target=/var/lib/docker,type=volume",
-    "source=bean-contracts-node-node_modules,target=${containerWorkspaceFolder}/node_modules,type=volume"
+    "source=vwaponchain-node_modules,target=${containerWorkspaceFolder}/node_modules,type=volume"
   ],
-  "overrideCommand": false,
 
   // Uncomment to connect as a non-root user. See https://aka.ms/vscode-remote/containers/non-root.
   "remoteUser": "node",
   "remoteEnv": {
     "PATH": "${containerEnv:PATH}:/home/node/.local/bin:/home/node/.foundry/bin",
-    "SOLC_VERSION": "0.8.13"
+    "SOLC_VERSION": "0.8.17",
+    "MAINNET_RPC_URL": "https://eth-mainnet.g.alchemy.com/v2/0Z_0t1F-b8Ke8275uw-1Z7AfhE_JWAhC"
   },
 
   // Set *default* container specific settings.json values on container create.
   "settings": {
-    "terminal.integrated.profiles.linux": {
-      "zsh (login)": {
-        "path": "zsh",
-        "args": ["-l"]
-      }
-    },
-    "terminal.integrated.defaultProfile.linux": "zsh (login)",
     "solidity.packageDefaultDependenciesContractsDirectory": "contracts",
-    "solidity.packageDefaultDependenciesDirectory": "lib",
+    "solidity.remappings": [
+      "@beandao/=node_modules/@beandao",
+      "@openzeppelin/=node_modules/@openzeppelin/",
+      "@uniswap/=node_modules/@uniswap/",
+      "base64-sol/=node_modules/base64-sol/",
+      "hardhat/=node_modules/hardhat/",
+      "forge-std/=lib/forge-std/src/",
+      "hardhat/=node_modules/hardhat/",
+      "UniswapV3Pack/=lib/UniswapV3Pack/src/"
+    ],
     "solidity.linter": "solhint",
     "solidity.formatter": "prettier",
-    "solidity.compileUsingRemoteVersion": "0.8.13",
+    "solidity.compileUsingRemoteVersion": "0.8.17",
     "solidity.enableLocalNodeCompiler": false,
     "search.exclude": { "lib": true },
     "git.ignoreLimitWarning": true,
@@ -80,6 +84,6 @@
     "styled-components.vscode-styled-components"
   ],
 
-  // Use 'postCreateCommand' to run commands after the container is created.
+  "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
   "postCreateCommand": "zsh ./.devcontainer/postCreateCommand.sh"
 }

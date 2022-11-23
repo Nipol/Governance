@@ -17,11 +17,40 @@ interface ICouncil {
         QUEUED, // 거버넌스로 제안 전송됨
         LEFTOUT // 거버전스로 제안되지 않고 버려짐
     }
+
     enum VoteState {
         UNKNOWN,
         YEA,
         NAY,
         ABSENT
+    }
+
+    //
+    struct Checkpoint {
+        uint128 fromBlock;
+        uint128 votes;
+    }
+
+    struct WithdrawPoint {
+        uint96 amount0;
+        uint96 amount1;
+        uint64 timestamp;
+    }
+
+    struct StakeParam {
+        uint256 amount0Desired;
+        uint256 amount1Desired;
+        uint256 amount0Min;
+        uint256 amount1Min;
+        uint256 deadline;
+    }
+
+    struct StakeSingleParam {
+        uint256 amountIn;
+        uint256 amountInForSwap;
+        uint256 amountOutMin;
+        bool isAmountIn0;
+        uint256 deadline;
     }
 
     struct Slot {
@@ -32,34 +61,28 @@ interface ICouncil {
         uint16 voteQuorum;
         // 긴급 제안 통과 비율 - ex) 총 발행량의 95%
         uint16 emergencyQuorum;
-        // 투표 시작 지연 기간 - ex) 1일
-        uint16 voteStartDelay;
+        // 투표 시작 지연 기간 - ex) 1일을 초로 환산
+        uint32 voteStartDelay;
         // 투표 기간 - ex) 5일
-        uint16 votePeriod;
+        uint32 votePeriod;
         // 투표 변경 가능 period - ex) 2일
-        uint16 voteChangableDelay;
-        // 투표권 모듈 컨트랙트 정보 160bit
-        address voteModule;
+        uint32 voteChangableDelay;
+        // 출금 기간 - ex) 6 month
+        uint32 withdrawDelay;
     }
 
     /// @notice 프로포절에 대한 투표 정보 기록
     struct Proposal {
-        /// SLOT 0 START ---------- ----------
         address governance;
         uint32 startTime;
         uint32 endTime;
-        uint32 timestamp;
-        /// SLOT 1 START ---------- ----------
         uint32 blockNumber;
-        uint32 epoch;
-        uint96 yea;
-        uint96 nay;
-        /// SLOT 2 START ---------- ----------
-        uint96 totalVotes;
+        uint128 yea;
+        uint128 nay;
+        uint128 abstain;
+        uint128 totalVotes;
         bool queued;
         bool leftout;
-        /// padding158bit
-        /// SLOT 3 START ---------- ----------
         mapping(address => Vote) votes;
         bytes32[] spells;
         bytes[] elements;
@@ -75,22 +98,7 @@ interface ICouncil {
     event Voted(address indexed voter, bytes32 indexed uid, uint256 power);
     event Resolved(bytes32 indexed uid);
 
-    function initialize(
-        address voteModuleAddr,
-        bytes calldata voteModuleData,
-        uint16 proposalQuorum,
-        uint16 voteQuorum,
-        uint16 emergencyQuorum,
-        uint16 voteStartDelay,
-        uint16 votePeriod,
-        uint16 voteChangableDelay
-    ) external;
-
-    function propose(
-        address governance,
-        bytes32[] calldata spells,
-        bytes[] calldata elements
-    ) external;
+    function propose(address governance, bytes32[] calldata spells, bytes[] calldata elements) external;
 
     function vote(bytes32 proposalId, bool support) external;
 

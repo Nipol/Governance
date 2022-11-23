@@ -21,10 +21,9 @@ interface IGovernance is IERC165, IERC1271, IERC721TokenReceiver, IERC1155TokenR
     }
 
     struct Proposal {
-        uint96 id; // remain 160 bit
-        bytes16 magichash; // remain 32 bit
-        ProposalState state; // remain 24 bit
-        uint24 dummy; // dummy
+        bytes32[] spells;
+        bytes[] elements;
+        ProposalState state;
     }
 
     struct ProposalParams {
@@ -40,14 +39,7 @@ interface IGovernance is IERC165, IERC1271, IERC721TokenReceiver, IERC1155TokenR
     }
 
     event Proposed(
-        bytes32 indexed proposalId,
-        string version,
-        uint96 id,
-        address indexed council,
-        address indexed proposer,
-        bytes32[] spells,
-        bytes[] elements,
-        bytes16 magichash
+        bytes32 indexed proposalId, string version, uint96 nonce, address indexed council, address indexed proposer
     );
 
     event Approved(bytes32 indexed proposalId);
@@ -62,30 +54,13 @@ interface IGovernance is IERC165, IERC1271, IERC721TokenReceiver, IERC1155TokenR
 
     function nonce() external view returns (uint96);
 
-    /**
-     * @notice 해당 함수는 컨트랙트가 배포될 때 단 한번만 호출 되며, 다시는 호출할 수 없습니다. 거버넌스의 이름, 초기 Council, 실행 딜레이를
-     * @dev 실행 대기 기간,
-     * @param govName 해당 거버넌스의 이름, 사람이 읽을 수 있는 형태
-     * @param initialCouncil 거버넌스를 통제할 Council 컨트랙트 주소, EOA일 수도 있으나 0x0이 될 수는 없다.
-     * @param executeDelay 거버넌스로 사용될 기본 딜레이, Scheduler의 기준을 따르며, 1일 이상이여야 한다.
-     */
-    function initialize(
-        string memory govName,
-        address initialCouncil,
-        uint32 executeDelay
-    ) external;
-
-    function propose(ProposalParams calldata params) external returns (bytes32 proposalId, uint96 id);
+    function propose(ProposalParams calldata params) external returns (bytes32 proposalId);
 
     function approve(bytes32 proposalId) external returns (bool);
 
     function drop(bytes32 proposalId) external returns (bool);
 
-    function execute(
-        bytes32 proposalId,
-        bytes32[] calldata spells,
-        bytes[] calldata elements
-    ) external;
+    function execute(bytes32 proposalId) external;
 
     function changeCouncil(address councilAddr) external;
 

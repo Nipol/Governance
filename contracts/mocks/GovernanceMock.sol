@@ -25,9 +25,8 @@ contract GovernanceMock is IGovernance {
         uint32 executeDelay
     ) external {}
 
-    function propose(ProposalParams memory) external pure returns (bytes32 proposalId, uint96 id) {
+    function propose(ProposalParams memory) external pure returns (bytes32 proposalId) {
         proposalId = bytes32(0x00000000000000000000000000000000000000000000000000000000000000f1);
-        id = 0;
     }
 
     function approve(bytes32) external pure returns (bool success) {
@@ -38,11 +37,7 @@ contract GovernanceMock is IGovernance {
         success = true;
     }
 
-    function execute(
-        bytes32 proposalId,
-        bytes32[] calldata spells,
-        bytes[] calldata elements
-    ) external {}
+    function execute(bytes32 proposalId) external {}
 
     function changeCouncil(address) external {}
 
