@@ -101,13 +101,13 @@ contract Governance is Wizadry, Scheduler, IGovernance {
 
     /**
      * @notice  카운슬을 통해 거버넌스가 실행할 제안을 등록합니다.
-     * @dev     pId = version + this address + nonce + council + proposer.
+     * @dev     pId = this address + version + nonce + council + proposer.
      * @param   params 제안 정보를 담고 있는 구조체
      * @return  proposalId 해당 제안의 고유 아이디
      */
     function propose(ProposalParams calldata params) external onlyCouncil returns (bytes32 proposalId) {
         unchecked {
-            proposalId = keccak256(abi.encodePacked(version, address(this), nonce++, council, params.proposer));
+            proposalId = keccak256(abi.encodePacked(address(this), version, ++nonce, council, params.proposer));
         }
         Proposal storage p = proposals[proposalId];
         (p.spells, p.elements, p.state) = (params.spells, params.elements, ProposalState.AWAIT);
