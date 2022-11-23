@@ -11,9 +11,7 @@
     "--init",
     "--dns",
     "1.1.1.1",
-    "--privileged",
-    "-v",
-    "${env:HOME}${env:USERPROFILE}/.ssh:/home/node/.ssh-localhost:ro"
+    "--privileged"
   ],
   "mounts": [
     "source=dind-var-lib-docker,target=/var/lib/docker,type=volume",
@@ -97,6 +95,6 @@
     "styled-components.vscode-styled-components"
   ],
 
-  // Use 'postCreateCommand' to run commands after the container is created.
+  "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
   "postCreateCommand": "zsh ./.devcontainer/postCreateCommand.sh"
 }

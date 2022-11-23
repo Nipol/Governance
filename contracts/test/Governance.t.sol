@@ -36,6 +36,7 @@ abstract contract InitialGovernance is Test {
     Governance g;
 
     function setUp() public virtual {
+        vm.createSelectFork(vm.rpcUrl("mainnet"));
         g = new Governance(1 days);
     }
 }

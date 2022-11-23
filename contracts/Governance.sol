@@ -101,23 +101,13 @@ contract Governance is Wizadry, Scheduler, IGovernance {
 
     /**
      * @notice  카운슬을 통해 거버넌스가 실행할 제안을 등록합니다.
-     * @dev     this + version + nonce + council + proposer + spells + elements
+     * @dev     pId = version + this address + nonce + council + proposer.
      * @param   params 제안 정보를 담고 있는 구조체
      * @return  proposalId 해당 제안의 고유 아이디
      */
     function propose(ProposalParams calldata params) external onlyCouncil returns (bytes32 proposalId) {
         unchecked {
-            proposalId = keccak256(
-                abi.encodePacked(
-                    address(this),
-                    version,
-                    nonce++,
-                    council,
-                    params.proposer,
-                    params.spells,
-                    abi.encode(params.elements)
-                )
-            );
+            proposalId = keccak256(abi.encodePacked(version, address(this), nonce++, council, params.proposer));
         }
         Proposal storage p = proposals[proposalId];
         (p.spells, p.elements, p.state) = (params.spells, params.elements, ProposalState.AWAIT);
@@ -284,24 +274,39 @@ contract Governance is Wizadry, Scheduler, IGovernance {
         }
     }
 
-    function onERC721Received(address, address, uint256, bytes memory) external pure returns (bytes4) {
+    function onERC721Received(
+        address,
+        address,
+        uint256,
+        bytes memory
+    ) external pure returns (bytes4) {
         return IERC721TokenReceiver.onERC721Received.selector;
     }
 
-    function onERC1155Received(address, address, uint256, uint256, bytes calldata) external pure returns (bytes4) {
+    function onERC1155Received(
+        address,
+        address,
+        uint256,
+        uint256,
+        bytes calldata
+    ) external pure returns (bytes4) {
         return IERC1155TokenReceiver.onERC1155Received.selector;
     }
 
-    function onERC1155BatchReceived(address, address, uint256[] calldata, uint256[] calldata, bytes calldata)
-        external
-        pure
-        returns (bytes4)
-    {
+    function onERC1155BatchReceived(
+        address,
+        address,
+        uint256[] calldata,
+        uint256[] calldata,
+        bytes calldata
+    ) external pure returns (bytes4) {
         return IERC1155TokenReceiver.onERC1155BatchReceived.selector;
     }
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-        return interfaceId == type(IERC165).interfaceId || interfaceId == type(IERC721TokenReceiver).interfaceId
-            || interfaceId == type(IERC1155TokenReceiver).interfaceId;
+        return
+            interfaceId == type(IERC165).interfaceId ||
+            interfaceId == type(IERC721TokenReceiver).interfaceId ||
+            interfaceId == type(IERC1155TokenReceiver).interfaceId;
     }
 }
